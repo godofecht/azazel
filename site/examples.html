@@ -10,33 +10,110 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">CUE + Zig deterministic build system</div>
-  <a href="index.html">Home</a>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting Started</a>
   <a href="project-file.html">Project File</a>
   <a href="schema-reference.html">Schema Reference</a>
+  <div class="section-label">Advanced</div>
   <a href="examples.html" class="active">Examples</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="architecture.html">Architecture</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+  </div>
 </nav>
 <main>
+
 <h1>Examples</h1>
-<p>All examples live in the <code>examples/</code> directory. To use one, copy it to <code>project.cue</code> and update <code>export.cue</code>'s <code>_modules</code> map.</p>
+<p class="page-subtitle">Real-world project configurations demonstrating different build topologies. All examples are in the <code>examples/</code> directory and can be tested by copying to <code>project.cue</code>.</p>
 
 <h2>Minimal — Single Executable</h2>
+<p>The smallest valid Azazel project. One executable, no dependencies, debug optimization by default.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <rect x="50" y="15" width="100" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="100" y="37" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">app</text>
+  <text x="100" y="52" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · debug</text>
+</svg>
+</div>
+
 <pre><code>package build
 
 app: #Module &amp; {
     kind: "exe"
     root: "src/main.zig"
 }</code></pre>
+
+<p><strong>export.cue modules:</strong></p>
+<pre><code>_modules: { "app": app }</code></pre>
 <p>Produces one binary at <code>zig-out/bin/app</code>.</p>
 
+<h2>Library + Executable</h2>
+<p>The default Azazel project. A static library linked into an executable with release optimization.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 350 100" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <rect x="20" y="25" width="120" height="50" rx="8" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="47" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="11" font-weight="600">core</text>
+  <text x="80" y="62" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">static · debug</text>
+  <rect x="210" y="25" width="120" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="270" y="47" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">app</text>
+  <text x="270" y="62" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
+  <path d="M145 50 L205 50" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#darr)"/>
+  <defs><marker id="darr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker></defs>
+</svg>
+</div>
+
+<pre><code>package build
+
+core: #Module &amp; {
+    kind: "static"
+    root: "src/core.zig"
+}
+
+app: #Module &amp; {
+    kind:    "exe"
+    root:    "src/main.zig"
+    deps:    ["core"]
+    profile: "release"
+}</code></pre>
+
+<p><strong>export.cue modules:</strong></p>
+<pre><code>_modules: { "core": core, "app": app }</code></pre>
+
 <h2>Multi-Library — Shared + Static + Exe</h2>
+<p>Demonstrates mixed library types. A shared math library, a static utils library, and an executable linking both.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 450 140" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <rect x="20" y="15" width="120" height="50" rx="8" fill="#181d27" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="80" y="37" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="11" font-weight="600">math</text>
+  <text x="80" y="52" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">shared · release</text>
+  <rect x="20" y="80" width="120" height="50" rx="8" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="102" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="11" font-weight="600">utils</text>
+  <text x="80" y="117" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">static · debug</text>
+  <rect x="280" y="45" width="130" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="345" y="67" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">app</text>
+  <text x="345" y="82" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
+  <path d="M145 40 L275 65" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#parr)"/>
+  <path d="M145 105 L275 75" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#sarr)"/>
+  <defs>
+    <marker id="parr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#bc8cff"/></marker>
+    <marker id="sarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
+  </defs>
+</svg>
+</div>
+
 <pre><code>package build
 
 math: #Module &amp; {
-    kind: "shared"
-    root: "src/math.zig"
+    kind:    "shared"
+    root:    "src/math.zig"
     profile: "release"
 }
 
@@ -51,9 +128,33 @@ app: #Module &amp; {
     deps:    ["math", "utils"]
     profile: "release"
 }</code></pre>
-<p><code>math</code> is shared (<code>.dylib</code>/<code>.so</code>), <code>utils</code> is static (<code>.a</code>), <code>app</code> links both.</p>
+
+<p><strong>export.cue modules:</strong></p>
+<pre><code>_modules: { "math": math, "utils": utils, "app": app }</code></pre>
 
 <h2>Microservice — Protocol + Two Services</h2>
+<p>A shared protocol library consumed by two independent service binaries. All modules optimized for production.</p>
+
+<div class="diagram">
+<svg viewBox="0 0 450 140" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <rect x="20" y="45" width="130" height="50" rx="8" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
+  <text x="85" y="67" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="11" font-weight="600">protocol</text>
+  <text x="85" y="82" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">static · release</text>
+  <rect x="280" y="10" width="130" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="345" y="32" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">gateway</text>
+  <text x="345" y="47" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
+  <rect x="280" y="80" width="130" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="345" y="102" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">worker</text>
+  <text x="345" y="117" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
+  <path d="M155 60 L275 35" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#oarr)"/>
+  <path d="M155 80 L275 100" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#oarr2)"/>
+  <defs>
+    <marker id="oarr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
+    <marker id="oarr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
+  </defs>
+</svg>
+</div>
+
 <pre><code>package build
 
 protocol: #Module &amp; {
@@ -75,7 +176,28 @@ worker: #Module &amp; {
     deps:    ["protocol"]
     profile: "release"
 }</code></pre>
-<p>Two binaries (<code>gateway</code>, <code>worker</code>) sharing a protocol library. All optimized for release.</p>
+
+<p><strong>export.cue modules:</strong></p>
+<pre><code>_modules: { "protocol": protocol, "gateway": gateway, "worker": worker }</code></pre>
+
+<h2>Using an Example</h2>
+<ol>
+  <li>Copy the example to <code>project.cue</code></li>
+  <li>Update the <code>_modules</code> map in <code>export.cue</code></li>
+  <li>Create the corresponding source files in <code>src/</code></li>
+  <li>Run <code>./gen_build_spec.sh &amp;&amp; zig build</code></li>
+</ol>
+
+<div class="callout">
+  <strong>Tip</strong>
+  All examples include their corresponding <code>export.cue</code> modules map. When switching examples, always update both files together.
+</div>
+
+<div class="page-footer">
+  <a href="schema-reference.html">&larr; Schema Reference</a>
+  <a href="code-generation.html">Next: Code Generation &rarr;</a>
+</div>
+
 </main>
 </body>
 </html>

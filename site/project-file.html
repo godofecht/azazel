@@ -10,38 +10,49 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">CUE + Zig deterministic build system</div>
-  <a href="index.html">Home</a>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting Started</a>
   <a href="project-file.html" class="active">Project File</a>
   <a href="schema-reference.html">Schema Reference</a>
+  <div class="section-label">Advanced</div>
   <a href="examples.html">Examples</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="architecture.html">Architecture</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+  </div>
 </nav>
 <main>
-<h1>Project File</h1>
-<p><code>project.cue</code> is the only file you edit. It declares your modules — what to build, from what source, with what dependencies.</p>
 
-<h2>Structure</h2>
-<p>Every module is a <code>#Module</code> with these fields:</p>
+<h1>Project File</h1>
+<p class="page-subtitle"><code>project.cue</code> is the only file you edit. It declares your modules — what to build, from what source, with what dependencies and optimization level.</p>
+
+<h2>Module Fields</h2>
+<p>Every module is defined as a <code>#Module</code> struct with these fields:</p>
 <table>
   <tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th></tr>
-  <tr><td><code>kind</code></td><td><code>"exe" "static" "shared"</code></td><td>yes</td><td>—</td><td>Output type</td></tr>
-  <tr><td><code>root</code></td><td><code>string</code></td><td>yes</td><td>—</td><td>Root source file path</td></tr>
-  <tr><td><code>deps</code></td><td><code>[...string]</code></td><td>no</td><td><code>[]</code></td><td>Names of module dependencies</td></tr>
-  <tr><td><code>profile</code></td><td><code>"debug" "release"</code></td><td>no</td><td><code>"debug"</code></td><td>Optimization profile</td></tr>
+  <tr><td><code>kind</code></td><td><code>"exe"</code> | <code>"static"</code> | <code>"shared"</code></td><td>Yes</td><td>—</td><td>Output artifact type</td></tr>
+  <tr><td><code>root</code></td><td><code>string</code></td><td>Yes</td><td>—</td><td>Path to root source file</td></tr>
+  <tr><td><code>deps</code></td><td><code>[...string]</code></td><td>No</td><td><code>[]</code></td><td>Names of modules this depends on</td></tr>
+  <tr><td><code>profile</code></td><td><code>"debug"</code> | <code>"release"</code></td><td>No</td><td><code>"debug"</code></td><td>Optimization profile</td></tr>
 </table>
 
 <h2>Minimal Example</h2>
+<p>The simplest valid project — a single executable with no dependencies, built in debug mode:</p>
 <pre><code>package build
 
 app: #Module &amp; {
     kind: "exe"
     root: "src/main.zig"
 }</code></pre>
-<p>One module. Four lines. Debug mode by default.</p>
+<p>Three fields. The <code>deps</code> defaults to an empty list, <code>profile</code> defaults to <code>"debug"</code>.</p>
 
 <h2>With Dependencies</h2>
+<p>A static library with an executable that links against it:</p>
 <pre><code>package build
 
 core: #Module &amp; {
@@ -55,15 +66,55 @@ app: #Module &amp; {
     deps:    ["core"]
     profile: "release"
 }</code></pre>
-<p><code>app</code> links against <code>core</code>. Released with <code>ReleaseFast</code> optimization.</p>
+<p><code>app</code> links against <code>core</code> at compile time. The <code>"release"</code> profile resolves to Zig's <code>.ReleaseFast</code> optimization mode. <code>core</code> inherits the default <code>"debug"</code> profile.</p>
+
+<div class="callout">
+  <strong>Note</strong>
+  Dependencies are resolved by name — the string <code>"core"</code> in the deps array must match the key name of another module definition in the same file.
+</div>
+
+<h2>Output Types</h2>
+<div class="card-grid">
+  <div class="card">
+    <h4><code>"exe"</code></h4>
+    <p>Produces a native executable binary. Installed to <code>zig-out/bin/</code> automatically.</p>
+  </div>
+  <div class="card">
+    <h4><code>"static"</code></h4>
+    <p>Produces a static library (<code>.a</code>). Available for linking by other modules via <code>deps</code>.</p>
+  </div>
+  <div class="card">
+    <h4><code>"shared"</code></h4>
+    <p>Produces a shared/dynamic library (<code>.so</code> / <code>.dylib</code> / <code>.dll</code>). Linked at runtime.</p>
+  </div>
+</div>
 
 <h2>Wiring Modules to Export</h2>
-<p>When you add or remove modules in <code>project.cue</code>, update the <code>_modules</code> map in <code>export.cue</code> to match:</p>
+<p>When you add or remove modules in <code>project.cue</code>, you must also update the <code>_modules</code> map in <code>export.cue</code> to match:</p>
 <pre><code>_modules: {
     "core": core
     "app":  app
 }</code></pre>
-<p>This map is the single source of truth for what gets generated into <code>build_spec.zig</code>.</p>
+<p>This map is the single source of truth for what gets generated into <code>build_spec.zig</code>. Only modules listed here will be included in the build.</p>
+
+<div class="callout warning">
+  <strong>Important</strong>
+  If you add a module to <code>project.cue</code> but forget to add it to <code>export.cue</code>, it will be validated but not included in the generated build spec.
+</div>
+
+<h2>Profile Behavior</h2>
+<table>
+  <tr><th>Profile</th><th>Zig OptimizeMode</th><th>Use Case</th></tr>
+  <tr><td><code>"debug"</code></td><td><code>.Debug</code></td><td>Development — fast compilation, safety checks enabled</td></tr>
+  <tr><td><code>"release"</code></td><td><code>.ReleaseFast</code></td><td>Production — maximum performance, safety checks disabled</td></tr>
+</table>
+<p>Each module can have its own profile. A common pattern is debug libraries with a release executable during development, and release everything for production.</p>
+
+<div class="page-footer">
+  <a href="getting-started.html">&larr; Getting Started</a>
+  <a href="schema-reference.html">Next: Schema Reference &rarr;</a>
+</div>
+
 </main>
 </body>
 </html>

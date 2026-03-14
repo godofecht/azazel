@@ -10,42 +10,97 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">CUE + Zig deterministic build system</div>
-  <a href="index.html">Home</a>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
   <a href="getting-started.html" class="active">Getting Started</a>
   <a href="project-file.html">Project File</a>
   <a href="schema-reference.html">Schema Reference</a>
+  <div class="section-label">Advanced</div>
   <a href="examples.html">Examples</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="architecture.html">Architecture</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+  </div>
 </nav>
 <main>
+
 <h1>Getting Started</h1>
+<p class="page-subtitle">Install dependencies, clone the repo, and build your first Azazel project in under two minutes.</p>
 
 <h2>Prerequisites</h2>
-<ul>
-  <li><a href="https://ziglang.org/download/">Zig</a> 0.14.0+</li>
-  <li><a href="https://cuelang.org/docs/introduction/installation/">CUE</a> v0.16.0+</li>
-  <li>Python 3 (for codegen script)</li>
-</ul>
+<table>
+  <tr><th>Tool</th><th>Version</th><th>Purpose</th></tr>
+  <tr><td><a href="https://ziglang.org/download/">Zig</a></td><td>0.14.0+</td><td>Compiler and build engine</td></tr>
+  <tr><td><a href="https://cuelang.org/docs/introduction/installation/">CUE</a></td><td>v0.16.0+</td><td>Schema validation and constraint resolution</td></tr>
+  <tr><td>Python 3</td><td>3.8+</td><td>Codegen script (<code>gen_build_spec.sh</code>)</td></tr>
+</table>
 
-<h2>Setup</h2>
+<div class="callout">
+  <strong>macOS</strong>
+  Install both with Homebrew: <code>brew install cue zig</code>
+</div>
+
+<h2>Clone and Build</h2>
 <pre><code>git clone https://github.com/godofecht/azazel.git
 cd azazel</code></pre>
 
-<h2>Build</h2>
-<pre><code>./gen_build_spec.sh   # CUE → build_spec.zig
-zig build             # compile everything</code></pre>
+<p>Generate the Zig build spec from the CUE configuration, then compile:</p>
+<pre><code>./gen_build_spec.sh   # CUE validates → generates build_spec.zig
+zig build             # compiles everything declared in the spec</code></pre>
 
 <h2>Run</h2>
 <pre><code>./zig-out/bin/app</code></pre>
 
-<h2>Validate Without Building</h2>
-<p>Check your <code>project.cue</code> against the schema without generating anything:</p>
-<pre><code>cue vet</code></pre>
+<p>The default project defines a static library (<code>core</code>) and an executable (<code>app</code>) that links against it. The executable is installed to <code>zig-out/bin/</code>.</p>
 
-<h2>Inspect Resolved Config</h2>
-<p>See the fully normalized build data CUE produces:</p>
+<h2>Development Workflow</h2>
+
+<h3>1. Validate your configuration</h3>
+<p>Check <code>project.cue</code> against the schema without generating anything:</p>
+<pre><code>cue vet</code></pre>
+<p>This catches type errors, invalid enum values, and missing required fields before any code is generated.</p>
+
+<h3>2. Inspect the resolved configuration</h3>
+<p>See the fully normalized build data that CUE produces:</p>
 <pre><code>cue export -e build</code></pre>
+<p>This shows you exactly what will be generated — all defaults resolved, all profiles expanded.</p>
+
+<h3>3. Generate and build</h3>
+<pre><code>./gen_build_spec.sh && zig build</code></pre>
+
+<h2>Project Structure</h2>
+<pre><code>azazel/
+├── schema.cue          # Type system (rarely edited)
+├── project.cue         # Your modules (the only file you edit)
+├── export.cue          # Wires modules to codegen output
+├── gen_build_spec.sh   # CUE → build_spec.zig
+├── build_spec.zig      # Generated (gitignored)
+├── build.zig           # Zig build interpreter
+└── src/
+    ├── main.zig
+    └── core.zig</code></pre>
+
+<div class="callout success">
+  <strong>Key insight</strong>
+  <code>project.cue</code> is the only file you routinely edit. The schema, codegen, and build engine are infrastructure — set once, never touched.
+</div>
+
+<h2>Next Steps</h2>
+<ul>
+  <li><a href="project-file.html">Project File</a> — learn all the fields available to you</li>
+  <li><a href="examples.html">Examples</a> — see real configurations for different project shapes</li>
+  <li><a href="https://github.com/godofecht/zaza">Zaza</a> — integrate with the full Zaza build pipeline</li>
+</ul>
+
+<div class="page-footer">
+  <a href="index.html">&larr; Overview</a>
+  <a href="project-file.html">Next: Project File &rarr;</a>
+</div>
+
 </main>
 </body>
 </html>

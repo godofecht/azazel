@@ -10,33 +10,75 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">CUE + Zig deterministic build system</div>
-  <a href="index.html">Home</a>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting Started</a>
   <a href="project-file.html">Project File</a>
   <a href="schema-reference.html">Schema Reference</a>
+  <div class="section-label">Advanced</div>
   <a href="examples.html">Examples</a>
   <a href="code-generation.html" class="active">Code Generation</a>
   <a href="architecture.html">Architecture</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+  </div>
 </nav>
 <main>
-<h1>Code Generation</h1>
-<p>Azazel generates Zig source code, not JSON. The build system never parses anything at runtime.</p>
 
-<h2>Pipeline</h2>
-<div class="pipeline">
-  <span class="step">schema.cue + project.cue</span>
-  <span class="arrow">&rarr;</span>
-  <span class="step">cue export</span>
-  <span class="arrow">&rarr;</span>
-  <span class="step">gen_build_spec.sh</span>
-  <span class="arrow">&rarr;</span>
-  <span class="step">build_spec.zig</span>
-  <span class="arrow">&rarr;</span>
-  <span class="step">build.zig @import</span>
+<h1>Code Generation</h1>
+<p class="page-subtitle">Azazel generates Zig source code — not JSON, not YAML, not any intermediate format. The build system never parses anything at runtime.</p>
+
+<h2>The Codegen Pipeline</h2>
+<p>The generation process has three distinct phases, each with a clear boundary:</p>
+
+<div class="diagram">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- Phase 1: CUE -->
+  <rect x="20" y="30" width="180" height="130" rx="10" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
+  <text x="110" y="25" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="10" font-weight="700">PHASE 1: VALIDATE</text>
+  <rect x="35" y="50" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
+  <text x="110" y="70" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">schema.cue</text>
+  <rect x="35" y="90" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
+  <text x="110" y="110" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">project.cue</text>
+  <rect x="35" y="130" width="150" height="25" rx="5" fill="#0f1319" stroke="#252d3a"/>
+  <text x="110" y="147" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">cue export -e build</text>
+  <!-- Phase 2: Codegen -->
+  <rect x="260" y="30" width="180" height="130" rx="10" fill="#181d27" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="350" y="25" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10" font-weight="700">PHASE 2: GENERATE</text>
+  <rect x="275" y="55" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
+  <text x="350" y="75" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">gen_build_spec.sh</text>
+  <rect x="275" y="105" width="150" height="30" rx="5" fill="#0f1319" stroke="#bc8cff" stroke-width="1"/>
+  <text x="350" y="125" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10">build_spec.zig</text>
+  <!-- Phase 3: Compile -->
+  <rect x="500" y="30" width="180" height="130" rx="10" fill="#181d27" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="590" y="25" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="700">PHASE 3: COMPILE</text>
+  <rect x="515" y="55" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
+  <text x="590" y="75" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">build.zig</text>
+  <rect x="515" y="105" width="150" height="30" rx="5" fill="#1a3a1a" stroke="#3fb950" stroke-width="1"/>
+  <text x="590" y="125" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10">zig-out/bin/*</text>
+  <!-- Arrows -->
+  <path d="M205 95 L255 95" stroke="#d29922" stroke-width="2" marker-end="url(#cgarr1)"/>
+  <path d="M445 95 L495 95" stroke="#bc8cff" stroke-width="2" marker-end="url(#cgarr2)"/>
+  <!-- Bottom labels -->
+  <text x="110" y="190" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">CUE Language</text>
+  <text x="350" y="190" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Shell + Python</text>
+  <text x="590" y="190" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Zig Compiler</text>
+  <!-- Boundary labels -->
+  <text x="110" y="210" text-anchor="middle" fill="#252d3a" font-family="Inter, sans-serif" font-size="9">Config time</text>
+  <text x="350" y="210" text-anchor="middle" fill="#252d3a" font-family="Inter, sans-serif" font-size="9">Build time</text>
+  <text x="590" y="210" text-anchor="middle" fill="#252d3a" font-family="Inter, sans-serif" font-size="9">Compile time</text>
+  <defs>
+    <marker id="cgarr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
+    <marker id="cgarr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#bc8cff"/></marker>
+  </defs>
+</svg>
 </div>
 
 <h2>Generated Output</h2>
-<p>For a project with <code>core</code> (static) and <code>app</code> (exe, release):</p>
+<p>For a project with <code>core</code> (static, debug) and <code>app</code> (exe, release), <code>gen_build_spec.sh</code> produces:</p>
 <pre><code>const std = @import("std");
 
 pub const Kind = enum { exe, static, shared };
@@ -66,17 +108,55 @@ pub const modules = [_]Module{
     },
 };</code></pre>
 
+<p>This file is a compile-time constant array. <code>build.zig</code> imports it with <code>@import("build_spec.zig")</code> and iterates the array to create build steps. No parsing, no allocation, no error handling required.</p>
+
 <h2>Why Not JSON?</h2>
-<ul>
-  <li>No runtime parsing cost</li>
-  <li>No <code>std.json</code> dependency in the build</li>
-  <li>Type-safe at compile time — Zig catches mismatches before execution</li>
-  <li>The generated file is human-readable and auditable</li>
-</ul>
+
+<div class="card-grid">
+  <div class="card">
+    <h4>Zero Runtime Cost</h4>
+    <p>No JSON parsing at build time. The module array exists as compile-time constants in the Zig binary.</p>
+  </div>
+  <div class="card">
+    <h4>Type Safety</h4>
+    <p>Zig's compiler catches type mismatches in the generated spec. A malformed codegen output fails at compile time, not runtime.</p>
+  </div>
+  <div class="card">
+    <h4>No Dependencies</h4>
+    <p>No <code>std.json</code>, no allocator, no error unions. The build script is simpler and more predictable.</p>
+  </div>
+  <div class="card">
+    <h4>Auditable</h4>
+    <p>The generated file is human-readable Zig. You can inspect exactly what will be built before running <code>zig build</code>.</p>
+  </div>
+</div>
+
+<h2>How the Script Works</h2>
+<p><code>gen_build_spec.sh</code> is a thin pipeline:</p>
+<ol>
+  <li>Runs <code>cue export -e build</code> to produce normalized JSON (internal only — never consumed by Zig)</li>
+  <li>Pipes the JSON through a Python script that emits Zig source code</li>
+  <li>Writes the result to <code>build_spec.zig</code></li>
+</ol>
+
+<div class="callout warning">
+  <strong>Important</strong>
+  JSON is used as an internal transport format between CUE and the codegen script — it never enters the Zig compilation pipeline. The Zig compiler only ever sees typed Zig source code.
+</div>
 
 <h2>Regenerating</h2>
+<p>Run the script whenever you change <code>project.cue</code> or <code>export.cue</code>:</p>
 <pre><code>./gen_build_spec.sh</code></pre>
-<p><code>build_spec.zig</code> is gitignored — it's a build artifact.</p>
+<p><code>build_spec.zig</code> is gitignored — it is a generated build artifact, not a source file.</p>
+
+<h2>Relationship to Zaza</h2>
+<p>In the <a href="https://github.com/godofecht/zaza">Zaza</a> build system, this same codegen pattern can be extended to produce more complex build specifications — including C/C++ interop targets, WebAssembly outputs, and CMake integration modules. Azazel provides the minimal, principled core that Zaza's extended pipeline builds upon.</p>
+
+<div class="page-footer">
+  <a href="examples.html">&larr; Examples</a>
+  <a href="architecture.html">Next: Architecture &rarr;</a>
+</div>
+
 </main>
 </body>
 </html>
