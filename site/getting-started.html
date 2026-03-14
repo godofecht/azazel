@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started — Azazel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">CUE + Zig deterministic build system</div>
+  <a href="index.html">Home</a>
+  <a href="getting-started.html" class="active">Getting Started</a>
+  <a href="project-file.html">Project File</a>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="examples.html">Examples</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="architecture.html">Architecture</a>
+</nav>
+<main>
+<h1>Getting Started</h1>
+
+<h2>Prerequisites</h2>
+<ul>
+  <li><a href="https://ziglang.org/download/">Zig</a> 0.14.0+</li>
+  <li><a href="https://cuelang.org/docs/introduction/installation/">CUE</a> v0.16.0+</li>
+  <li>Python 3 (for codegen script)</li>
+</ul>
+
+<h2>Setup</h2>
+<pre><code>git clone https://github.com/godofecht/azazel.git
+cd azazel</code></pre>
+
+<h2>Build</h2>
+<pre><code>./gen_build_spec.sh   # CUE → build_spec.zig
+zig build             # compile everything</code></pre>
+
+<h2>Run</h2>
+<pre><code>./zig-out/bin/app</code></pre>
+
+<h2>Validate Without Building</h2>
+<p>Check your <code>project.cue</code> against the schema without generating anything:</p>
+<pre><code>cue vet</code></pre>
+
+<h2>Inspect Resolved Config</h2>
+<p>See the fully normalized build data CUE produces:</p>
+<pre><code>cue export -e build</code></pre>
+</main>
+</body>
+</html>

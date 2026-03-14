@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — Azazel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">CUE + Zig deterministic build system</div>
+  <a href="index.html">Home</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="project-file.html">Project File</a>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="examples.html">Examples</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="architecture.html" class="active">Architecture</a>
+</nav>
+<main>
+<h1>Architecture</h1>
+
+<h2>Design Principles</h2>
+<ol>
+  <li><strong>Deterministic</strong> — CUE ensures schema + default resolution. Same input, same output.</li>
+  <li><strong>Minimal surface</strong> — Users see 4 fields. Nothing else leaks through.</li>
+  <li><strong>No JSON runtime</strong> — CUE exports Zig source. Build reads it at compile time.</li>
+  <li><strong>Separation of concerns</strong> — CUE is purely declarative. Zig is purely execution.</li>
+</ol>
+
+<h2>File Roles</h2>
+<table>
+  <tr><th>File</th><th>Role</th><th>Edit Frequency</th></tr>
+  <tr><td><code>project.cue</code></td><td>Declare modules</td><td>Every time you add/change a target</td></tr>
+  <tr><td><code>export.cue</code></td><td>Wire modules to output</td><td>When adding/removing module names</td></tr>
+  <tr><td><code>schema.cue</code></td><td>Type definitions + defaults</td><td>Rarely — only for new kinds/profiles</td></tr>
+  <tr><td><code>gen_build_spec.sh</code></td><td>CUE &rarr; Zig codegen</td><td>Never</td></tr>
+  <tr><td><code>build_spec.zig</code></td><td>Generated module array</td><td>Never (gitignored)</td></tr>
+  <tr><td><code>build.zig</code></td><td>Zig build interpreter</td><td>Never</td></tr>
+</table>
+
+<h2>What Is NOT Exposed</h2>
+<p>These are intentionally hidden from the user:</p>
+<ul>
+  <li>Compiler flags</li>
+  <li>Include paths</li>
+  <li>Macro definitions</li>
+  <li>Platform triples</li>
+  <li>Internal Zig build knobs</li>
+  <li>Linker options</li>
+</ul>
+
+<h2>Build Engine</h2>
+<p>The Zig side is a ~40 line loop:</p>
+<ol>
+  <li><strong>Pass 1</strong> — iterate <code>spec.modules</code>, create the appropriate <code>Compile</code> step for each, store in a hash map by name</li>
+  <li><strong>Pass 2</strong> — iterate again, resolve <code>deps</code> by name lookup, call <code>linkLibrary</code>, install executables</li>
+</ol>
+<p>Two passes are needed because dependencies may reference modules defined later in the array.</p>
+
+<h2>Extending</h2>
+<h3>Adding a new profile</h3>
+<ol>
+  <li>Add the value to <code>#Profile</code> in <code>schema.cue</code></li>
+  <li>Add its optimization mapping to <code>profiles</code></li>
+  <li>Use it in <code>project.cue</code></li>
+</ol>
+
+<h3>Adding a new module kind</h3>
+<ol>
+  <li>Add the value to <code>#Kind</code> in <code>schema.cue</code></li>
+  <li>Handle it in <code>build.zig</code>'s switch statement</li>
+</ol>
+
+<h3>Future Directions</h3>
+<ul>
+  <li>Multi-platform matrix expansion</li>
+  <li>Feature toggles</li>
+  <li>Test targets</li>
+  <li>Package integration</li>
+  <li>Remote cache compatibility</li>
+</ul>
+</main>
+</body>
+</html>

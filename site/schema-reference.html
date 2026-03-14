@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schema Reference — Azazel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">CUE + Zig deterministic build system</div>
+  <a href="index.html">Home</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="project-file.html">Project File</a>
+  <a href="schema-reference.html" class="active">Schema Reference</a>
+  <a href="examples.html">Examples</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="architecture.html">Architecture</a>
+</nav>
+<main>
+<h1>Schema Reference</h1>
+<p><code>schema.cue</code> defines the type system. You should rarely need to modify it.</p>
+
+<h2>Types</h2>
+
+<h3>#Kind</h3>
+<pre><code>#Kind: "exe" | "static" | "shared"</code></pre>
+<table>
+  <tr><th>Value</th><th>Zig equivalent</th></tr>
+  <tr><td><code>"exe"</code></td><td><code>addExecutable</code></td></tr>
+  <tr><td><code>"static"</code></td><td><code>addStaticLibrary</code></td></tr>
+  <tr><td><code>"shared"</code></td><td><code>addSharedLibrary</code></td></tr>
+</table>
+
+<h3>#Profile</h3>
+<pre><code>#Profile: "debug" | "release"</code></pre>
+<table>
+  <tr><th>Value</th><th>Zig OptimizeMode</th></tr>
+  <tr><td><code>"debug"</code></td><td><code>.Debug</code></td></tr>
+  <tr><td><code>"release"</code></td><td><code>.ReleaseFast</code></td></tr>
+</table>
+
+<h3>#Module</h3>
+<pre><code>#Module: {
+    kind:     #Kind
+    root:     string
+    deps:     [...string] | *[]
+    profile:  #Profile | *"debug"
+}</code></pre>
+<p>All validation happens at <code>cue vet</code> / <code>cue export</code> time. Invalid values are rejected before any Zig code is generated.</p>
+
+<h2>Profiles</h2>
+<pre><code>profiles: {
+    debug:   { optimize: "Debug" }
+    release: { optimize: "ReleaseFast" }
+}</code></pre>
+<p>To add a new profile (e.g. <code>small</code>), add it to <code>#Profile</code>, add its entry to <code>profiles</code>, and it becomes available in <code>project.cue</code>.</p>
+
+<h2>What the Schema Rejects</h2>
+<table>
+  <tr><th>Input</th><th>Error</th></tr>
+  <tr><td><code>kind: "dylib"</code></td><td>Not in <code>#Kind</code> disjunction</td></tr>
+  <tr><td><code>profile: "turbo"</code></td><td>Not in <code>#Profile</code> disjunction</td></tr>
+  <tr><td><code>root: 42</code></td><td>Type mismatch: expected <code>string</code></td></tr>
+  <tr><td>Missing <code>kind</code></td><td>Incomplete value</td></tr>
+  <tr><td>Missing <code>root</code></td><td>Incomplete value</td></tr>
+</table>
+</main>
+</body>
+</html>

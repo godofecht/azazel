@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examples — Azazel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">CUE + Zig deterministic build system</div>
+  <a href="index.html">Home</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="project-file.html">Project File</a>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="examples.html" class="active">Examples</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="architecture.html">Architecture</a>
+</nav>
+<main>
+<h1>Examples</h1>
+<p>All examples live in the <code>examples/</code> directory. To use one, copy it to <code>project.cue</code> and update <code>export.cue</code>'s <code>_modules</code> map.</p>
+
+<h2>Minimal — Single Executable</h2>
+<pre><code>package build
+
+app: #Module &amp; {
+    kind: "exe"
+    root: "src/main.zig"
+}</code></pre>
+<p>Produces one binary at <code>zig-out/bin/app</code>.</p>
+
+<h2>Multi-Library — Shared + Static + Exe</h2>
+<pre><code>package build
+
+math: #Module &amp; {
+    kind: "shared"
+    root: "src/math.zig"
+    profile: "release"
+}
+
+utils: #Module &amp; {
+    kind: "static"
+    root: "src/utils.zig"
+}
+
+app: #Module &amp; {
+    kind:    "exe"
+    root:    "src/main.zig"
+    deps:    ["math", "utils"]
+    profile: "release"
+}</code></pre>
+<p><code>math</code> is shared (<code>.dylib</code>/<code>.so</code>), <code>utils</code> is static (<code>.a</code>), <code>app</code> links both.</p>
+
+<h2>Microservice — Protocol + Two Services</h2>
+<pre><code>package build
+
+protocol: #Module &amp; {
+    kind:    "static"
+    root:    "src/protocol.zig"
+    profile: "release"
+}
+
+gateway: #Module &amp; {
+    kind:    "exe"
+    root:    "src/gateway.zig"
+    deps:    ["protocol"]
+    profile: "release"
+}
+
+worker: #Module &amp; {
+    kind:    "exe"
+    root:    "src/worker.zig"
+    deps:    ["protocol"]
+    profile: "release"
+}</code></pre>
+<p>Two binaries (<code>gateway</code>, <code>worker</code>) sharing a protocol library. All optimized for release.</p>
+</main>
+</body>
+</html>
