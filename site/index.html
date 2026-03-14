@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Azazel — CUE + Zig Build System</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">CUE + Zig deterministic build system</div>
+  <a href="index.html" class="active">Home</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="project-file.html">Project File</a>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="examples.html">Examples</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="architecture.html">Architecture</a>
+</nav>
+<main>
+<h1>Azazel</h1>
+<p>A deterministic build system using <strong>CUE</strong> for constraint validation and <strong>Zig</strong> for execution.</p>
+<p>No JSON runtime. No flags. No ceremony.</p>
+
+<h2>How It Works</h2>
+<div class="pipeline">
+  <span class="step">project.cue</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">CUE validates</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">build_spec.zig</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">zig build</span>
+</div>
+<ol>
+  <li>You edit <code>project.cue</code> — the only file you touch</li>
+  <li>Run <code>./gen_build_spec.sh</code> — CUE validates your config against the schema and emits a Zig source file</li>
+  <li>Run <code>zig build</code> — Zig reads the generated spec at compile time, zero parsing overhead</li>
+</ol>
+
+<h2>Quick Start</h2>
+<pre><code>git clone https://github.com/godofecht/azazel.git
+cd azazel
+./gen_build_spec.sh
+zig build
+./zig-out/bin/app</code></pre>
+
+<h2>Design Principles</h2>
+<table>
+  <tr><th>Principle</th><th>How</th></tr>
+  <tr><td>Deterministic</td><td>CUE ensures schema + default resolution</td></tr>
+  <tr><td>Minimal surface</td><td>4 fields: kind, root, deps, profile</td></tr>
+  <tr><td>No JSON runtime</td><td>CUE exports Zig source directly</td></tr>
+  <tr><td>Separation of concerns</td><td>CUE is declarative, Zig is execution</td></tr>
+</table>
+
+<p><a href="https://github.com/godofecht/azazel">View on GitHub &rarr;</a></p>
+</main>
+</body>
+</html>

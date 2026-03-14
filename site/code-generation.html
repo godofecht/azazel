@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Generation — Azazel</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">CUE + Zig deterministic build system</div>
+  <a href="index.html">Home</a>
+  <a href="getting-started.html">Getting Started</a>
+  <a href="project-file.html">Project File</a>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="examples.html">Examples</a>
+  <a href="code-generation.html" class="active">Code Generation</a>
+  <a href="architecture.html">Architecture</a>
+</nav>
+<main>
+<h1>Code Generation</h1>
+<p>Azazel generates Zig source code, not JSON. The build system never parses anything at runtime.</p>
+
+<h2>Pipeline</h2>
+<div class="pipeline">
+  <span class="step">schema.cue + project.cue</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">cue export</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">gen_build_spec.sh</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">build_spec.zig</span>
+  <span class="arrow">&rarr;</span>
+  <span class="step">build.zig @import</span>
+</div>
+
+<h2>Generated Output</h2>
+<p>For a project with <code>core</code> (static) and <code>app</code> (exe, release):</p>
+<pre><code>const std = @import("std");
+
+pub const Kind = enum { exe, static, shared };
+
+pub const Module = struct {
+    name: []const u8,
+    kind: Kind,
+    root: []const u8,
+    deps: []const []const u8,
+    optimize: std.builtin.OptimizeMode,
+};
+
+pub const modules = [_]Module{
+    .{
+        .name = "core",
+        .kind = .static,
+        .root = "src/core.zig",
+        .deps = &amp;.{},
+        .optimize = .Debug,
+    },
+    .{
+        .name = "app",
+        .kind = .exe,
+        .root = "src/main.zig",
+        .deps = &amp;.{ "core" },
+        .optimize = .ReleaseFast,
+    },
+};</code></pre>
+
+<h2>Why Not JSON?</h2>
+<ul>
+  <li>No runtime parsing cost</li>
+  <li>No <code>std.json</code> dependency in the build</li>
+  <li>Type-safe at compile time — Zig catches mismatches before execution</li>
+  <li>The generated file is human-readable and auditable</li>
+</ul>
+
+<h2>Regenerating</h2>
+<pre><code>./gen_build_spec.sh</code></pre>
+<p><code>build_spec.zig</code> is gitignored — it's a build artifact.</p>
+</main>
+</body>
+</html>
