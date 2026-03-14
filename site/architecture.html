@@ -10,77 +10,164 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">CUE + Zig deterministic build system</div>
-  <a href="index.html">Home</a>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting Started</a>
   <a href="project-file.html">Project File</a>
   <a href="schema-reference.html">Schema Reference</a>
+  <div class="section-label">Advanced</div>
   <a href="examples.html">Examples</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="architecture.html" class="active">Architecture</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+  </div>
 </nav>
 <main>
+
 <h1>Architecture</h1>
+<p class="page-subtitle">How the layers fit together, what each file does, what is intentionally hidden, and how to extend the system.</p>
 
 <h2>Design Principles</h2>
-<ol>
-  <li><strong>Deterministic</strong> — CUE ensures schema + default resolution. Same input, same output.</li>
-  <li><strong>Minimal surface</strong> — Users see 4 fields. Nothing else leaks through.</li>
-  <li><strong>No JSON runtime</strong> — CUE exports Zig source. Build reads it at compile time.</li>
-  <li><strong>Separation of concerns</strong> — CUE is purely declarative. Zig is purely execution.</li>
-</ol>
+<div class="card-grid">
+  <div class="card">
+    <h4>Deterministic</h4>
+    <p>CUE's constraint engine guarantees that schema validation and default resolution produce identical output for identical input. No ambient state, no environment leakage.</p>
+  </div>
+  <div class="card">
+    <h4>Minimal Surface</h4>
+    <p>Users interact with 4 fields. The build system's internal complexity — compiler flags, linker invocations, platform detection — is fully encapsulated.</p>
+  </div>
+  <div class="card">
+    <h4>No Runtime Parsing</h4>
+    <p>Configuration is compiled into typed Zig constants. The build script contains zero parsing logic, zero error handling for malformed config, zero allocations.</p>
+  </div>
+  <div class="card">
+    <h4>Layer Separation</h4>
+    <p>CUE is purely declarative — it never executes build steps. Zig is purely execution — it never validates configuration. Each layer has exactly one responsibility.</p>
+  </div>
+</div>
 
-<h2>File Roles</h2>
+<h2>System Architecture</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- Human layer -->
+  <rect x="20" y="20" width="660" height="60" rx="10" fill="#181d27" stroke="#58a6ff" stroke-width="1" stroke-dasharray="6 3"/>
+  <text x="40" y="48" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="700">HUMAN LAYER</text>
+  <rect x="200" y="35" width="130" height="30" rx="6" fill="#0f1319" stroke="#58a6ff" stroke-width="1"/>
+  <text x="265" y="55" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="11">project.cue</text>
+  <text x="430" y="55" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">The only file you edit</text>
+  <!-- Schema layer -->
+  <rect x="20" y="100" width="660" height="60" rx="10" fill="#181d27" stroke="#d29922" stroke-width="1" stroke-dasharray="6 3"/>
+  <text x="40" y="128" fill="#d29922" font-family="monospace" font-size="10" font-weight="700">CONSTRAINT LAYER</text>
+  <rect x="200" y="115" width="120" height="30" rx="6" fill="#0f1319" stroke="#d29922" stroke-width="1"/>
+  <text x="260" y="135" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="11">schema.cue</text>
+  <rect x="340" y="115" width="120" height="30" rx="6" fill="#0f1319" stroke="#d29922" stroke-width="1"/>
+  <text x="400" y="135" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="11">export.cue</text>
+  <text x="520" y="135" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Validates + resolves</text>
+  <!-- Codegen layer -->
+  <rect x="20" y="180" width="660" height="60" rx="10" fill="#181d27" stroke="#bc8cff" stroke-width="1" stroke-dasharray="6 3"/>
+  <text x="40" y="208" fill="#bc8cff" font-family="monospace" font-size="10" font-weight="700">CODEGEN LAYER</text>
+  <rect x="200" y="195" width="160" height="30" rx="6" fill="#0f1319" stroke="#bc8cff" stroke-width="1"/>
+  <text x="280" y="215" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="11">gen_build_spec.sh</text>
+  <rect x="390" y="195" width="140" height="30" rx="6" fill="#0f1319" stroke="#bc8cff" stroke-width="1"/>
+  <text x="460" y="215" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="11">build_spec.zig</text>
+  <!-- Execution layer -->
+  <rect x="20" y="260" width="660" height="60" rx="10" fill="#181d27" stroke="#3fb950" stroke-width="1" stroke-dasharray="6 3"/>
+  <text x="40" y="288" fill="#3fb950" font-family="monospace" font-size="10" font-weight="700">EXECUTION LAYER</text>
+  <rect x="200" y="275" width="110" height="30" rx="6" fill="#0f1319" stroke="#3fb950" stroke-width="1"/>
+  <text x="255" y="295" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="11">build.zig</text>
+  <rect x="340" y="275" width="130" height="30" rx="6" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="405" y="295" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11">zig-out/bin/*</text>
+  <text x="520" y="295" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Compiles + links</text>
+  <!-- Vertical arrows -->
+  <path d="M265 68 L265 96" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#adarr1)"/>
+  <path d="M350 163 L350 177" stroke="#d29922" stroke-width="1.5" marker-end="url(#adarr2)"/>
+  <path d="M350 243 L350 257" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#adarr3)"/>
+  <defs>
+    <marker id="adarr1" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 5 10 L 10 0 z" fill="#58a6ff"/></marker>
+    <marker id="adarr2" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 5 10 L 10 0 z" fill="#d29922"/></marker>
+    <marker id="adarr3" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 5 10 L 10 0 z" fill="#bc8cff"/></marker>
+  </defs>
+</svg>
+</div>
+
+<h2>File Responsibility Matrix</h2>
 <table>
-  <tr><th>File</th><th>Role</th><th>Edit Frequency</th></tr>
-  <tr><td><code>project.cue</code></td><td>Declare modules</td><td>Every time you add/change a target</td></tr>
-  <tr><td><code>export.cue</code></td><td>Wire modules to output</td><td>When adding/removing module names</td></tr>
-  <tr><td><code>schema.cue</code></td><td>Type definitions + defaults</td><td>Rarely — only for new kinds/profiles</td></tr>
-  <tr><td><code>gen_build_spec.sh</code></td><td>CUE &rarr; Zig codegen</td><td>Never</td></tr>
-  <tr><td><code>build_spec.zig</code></td><td>Generated module array</td><td>Never (gitignored)</td></tr>
-  <tr><td><code>build.zig</code></td><td>Zig build interpreter</td><td>Never</td></tr>
+  <tr><th>File</th><th>Layer</th><th>Responsibility</th><th>Edit Frequency</th></tr>
+  <tr><td><code>project.cue</code></td><td>Human</td><td>Declare modules, deps, and profiles</td><td>Every change</td></tr>
+  <tr><td><code>schema.cue</code></td><td>Constraint</td><td>Type definitions, enums, defaults</td><td>Rarely</td></tr>
+  <tr><td><code>export.cue</code></td><td>Constraint</td><td>Wire modules to normalized output</td><td>When adding/removing modules</td></tr>
+  <tr><td><code>gen_build_spec.sh</code></td><td>Codegen</td><td>Transform CUE output to Zig source</td><td>Never</td></tr>
+  <tr><td><code>build_spec.zig</code></td><td>Codegen</td><td>Generated compile-time module array</td><td>Never (gitignored)</td></tr>
+  <tr><td><code>build.zig</code></td><td>Execution</td><td>Zig build interpreter loop</td><td>Never</td></tr>
 </table>
 
-<h2>What Is NOT Exposed</h2>
-<p>These are intentionally hidden from the user:</p>
-<ul>
-  <li>Compiler flags</li>
-  <li>Include paths</li>
-  <li>Macro definitions</li>
-  <li>Platform triples</li>
-  <li>Internal Zig build knobs</li>
-  <li>Linker options</li>
-</ul>
+<h2>What Is Intentionally Hidden</h2>
+<p>Azazel deliberately does not expose these to the user. They are resolved internally by the schema defaults, the codegen layer, or the Zig build engine:</p>
 
-<h2>Build Engine</h2>
-<p>The Zig side is a ~40 line loop:</p>
-<ol>
-  <li><strong>Pass 1</strong> — iterate <code>spec.modules</code>, create the appropriate <code>Compile</code> step for each, store in a hash map by name</li>
-  <li><strong>Pass 2</strong> — iterate again, resolve <code>deps</code> by name lookup, call <code>linkLibrary</code>, install executables</li>
-</ol>
-<p>Two passes are needed because dependencies may reference modules defined later in the array.</p>
+<table>
+  <tr><th>Concept</th><th>Handled By</th><th>Why Hidden</th></tr>
+  <tr><td>Compiler flags</td><td>Zig build engine</td><td>Optimization is controlled by <code>profile</code></td></tr>
+  <tr><td>Include paths</td><td>Zig's module system</td><td>Root source file implies the module graph</td></tr>
+  <tr><td>Macro definitions</td><td>Not applicable</td><td>Zig has no preprocessor</td></tr>
+  <tr><td>Platform triples</td><td><code>zig build -Dtarget=</code></td><td>Orthogonal to project config</td></tr>
+  <tr><td>Linker options</td><td>Zig build engine</td><td><code>linkLibrary</code> handles transitive deps</td></tr>
+  <tr><td>Build graph ordering</td><td><code>build.zig</code> two-pass loop</td><td>Dependency resolution is automatic</td></tr>
+</table>
 
-<h2>Extending</h2>
-<h3>Adding a new profile</h3>
+<h2>Build Engine Internals</h2>
+<p><code>build.zig</code> is approximately 40 lines and implements a simple two-pass algorithm:</p>
+
+<h3>Pass 1 — Create Steps</h3>
+<p>Iterates <code>spec.modules</code> and creates the appropriate Zig build step for each module (<code>addExecutable</code>, <code>addStaticLibrary</code>, or <code>addSharedLibrary</code>). Each step is stored in a <code>StringHashMap</code> keyed by module name.</p>
+
+<h3>Pass 2 — Link Dependencies</h3>
+<p>Iterates again. For each module, resolves <code>deps</code> by name lookup and calls <code>linkLibrary</code>. Executables are registered with <code>b.installArtifact</code>.</p>
+
+<p>Two passes are needed because a module's dependencies may be defined later in the array.</p>
+
+<h2>Extending Azazel</h2>
+
+<h3>Adding a New Profile</h3>
 <ol>
   <li>Add the value to <code>#Profile</code> in <code>schema.cue</code></li>
-  <li>Add its optimization mapping to <code>profiles</code></li>
+  <li>Add its <code>optimize</code> mapping to the <code>profiles</code> struct</li>
   <li>Use it in <code>project.cue</code></li>
 </ol>
 
-<h3>Adding a new module kind</h3>
+<h3>Adding a New Module Kind</h3>
 <ol>
   <li>Add the value to <code>#Kind</code> in <code>schema.cue</code></li>
-  <li>Handle it in <code>build.zig</code>'s switch statement</li>
+  <li>Add a matching <code>switch</code> arm in <code>build.zig</code></li>
+  <li>Update <code>gen_build_spec.sh</code> if the new kind requires different codegen</li>
 </ol>
 
-<h3>Future Directions</h3>
+<h2>Future Directions</h2>
+<p>These extensions are under consideration for the Azazel + <a href="https://github.com/godofecht/zaza">Zaza</a> ecosystem:</p>
 <ul>
-  <li>Multi-platform matrix expansion</li>
-  <li>Feature toggles</li>
-  <li>Test targets</li>
-  <li>Package integration</li>
-  <li>Remote cache compatibility</li>
+  <li><strong>Multi-platform matrix expansion</strong> — define targets for multiple OS/arch combinations from a single project file</li>
+  <li><strong>Feature toggles</strong> — conditional compilation flags controlled from CUE</li>
+  <li><strong>Test targets</strong> — first-class test module definitions with <code>kind: "test"</code></li>
+  <li><strong>Package integration</strong> — CUE-defined dependency resolution for Zig packages</li>
+  <li><strong>Remote cache compatibility</strong> — content-addressable build artifacts for CI/CD pipelines</li>
+  <li><strong>C/C++ interop modules</strong> — leveraging Zaza's CMake and C toolchain integration</li>
 </ul>
+
+<div class="callout">
+  <strong>Contributing</strong>
+  Azazel is open source. Issues and pull requests are welcome at <a href="https://github.com/godofecht/azazel">github.com/godofecht/azazel</a>. For build system integration, see the <a href="https://github.com/godofecht/zaza">Zaza repository</a>.
+</div>
+
+<div class="page-footer">
+  <a href="code-generation.html">&larr; Code Generation</a>
+  <span><a href="https://github.com/godofecht/azazel">Azazel</a> &middot; Part of the <a href="https://github.com/godofecht/zaza">Zaza</a> ecosystem</span>
+</div>
+
 </main>
 </body>
 </html>

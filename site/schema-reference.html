@@ -10,62 +10,132 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">CUE + Zig deterministic build system</div>
-  <a href="index.html">Home</a>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting Started</a>
   <a href="project-file.html">Project File</a>
   <a href="schema-reference.html" class="active">Schema Reference</a>
+  <div class="section-label">Advanced</div>
   <a href="examples.html">Examples</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="architecture.html">Architecture</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+  </div>
 </nav>
 <main>
+
 <h1>Schema Reference</h1>
-<p><code>schema.cue</code> defines the type system. You should rarely need to modify it.</p>
+<p class="page-subtitle"><code>schema.cue</code> defines the complete type system. It enforces correctness at configuration time — before any Zig code is generated. You should rarely need to modify it.</p>
 
-<h2>Types</h2>
+<h2>Type Definitions</h2>
 
-<h3>#Kind</h3>
+<h3><code>#Kind</code> <span class="badge">enum</span></h3>
+<p>The output artifact type for a module.</p>
 <pre><code>#Kind: "exe" | "static" | "shared"</code></pre>
 <table>
-  <tr><th>Value</th><th>Zig equivalent</th></tr>
-  <tr><td><code>"exe"</code></td><td><code>addExecutable</code></td></tr>
-  <tr><td><code>"static"</code></td><td><code>addStaticLibrary</code></td></tr>
-  <tr><td><code>"shared"</code></td><td><code>addSharedLibrary</code></td></tr>
+  <tr><th>Value</th><th>Zig Build API</th><th>Output</th></tr>
+  <tr><td><code>"exe"</code></td><td><code>b.addExecutable()</code></td><td>Native binary</td></tr>
+  <tr><td><code>"static"</code></td><td><code>b.addStaticLibrary()</code></td><td><code>.a</code> archive</td></tr>
+  <tr><td><code>"shared"</code></td><td><code>b.addSharedLibrary()</code></td><td><code>.so</code> / <code>.dylib</code> / <code>.dll</code></td></tr>
 </table>
 
-<h3>#Profile</h3>
+<h3><code>#Profile</code> <span class="badge">enum</span></h3>
+<p>The optimization strategy applied to a module.</p>
 <pre><code>#Profile: "debug" | "release"</code></pre>
 <table>
-  <tr><th>Value</th><th>Zig OptimizeMode</th></tr>
-  <tr><td><code>"debug"</code></td><td><code>.Debug</code></td></tr>
-  <tr><td><code>"release"</code></td><td><code>.ReleaseFast</code></td></tr>
+  <tr><th>Value</th><th>Zig <code>OptimizeMode</code></th><th>Behavior</th></tr>
+  <tr><td><code>"debug"</code></td><td><code>.Debug</code></td><td>No optimization, safety checks on, fast compile</td></tr>
+  <tr><td><code>"release"</code></td><td><code>.ReleaseFast</code></td><td>Maximum optimization, safety checks off</td></tr>
 </table>
 
-<h3>#Module</h3>
+<h3><code>#Module</code> <span class="badge">struct</span></h3>
+<p>The core type. Every build target is a <code>#Module</code>.</p>
 <pre><code>#Module: {
     kind:     #Kind
     root:     string
     deps:     [...string] | *[]
     profile:  #Profile | *"debug"
 }</code></pre>
-<p>All validation happens at <code>cue vet</code> / <code>cue export</code> time. Invalid values are rejected before any Zig code is generated.</p>
+<p>CUE's <code>*</code> operator marks default values. If <code>deps</code> is omitted, it defaults to an empty list. If <code>profile</code> is omitted, it defaults to <code>"debug"</code>.</p>
 
-<h2>Profiles</h2>
+<h2>Profile Resolution</h2>
+<p>The <code>profiles</code> map translates user-facing profile names to Zig-native optimization values:</p>
 <pre><code>profiles: {
+    debug: {
+        optimize: "Debug"
+    }
+    release: {
+        optimize: "ReleaseFast"
+    }
+}</code></pre>
+<p>This indirection means you can add new profiles (e.g. <code>"small"</code> mapping to <code>ReleaseSmall</code>, or <code>"safe"</code> mapping to <code>ReleaseSafe</code>) without changing the project file format.</p>
+
+<h3>Adding a New Profile</h3>
+<ol>
+  <li>Add the value to the <code>#Profile</code> disjunction in <code>schema.cue</code></li>
+  <li>Add its optimization mapping to the <code>profiles</code> struct</li>
+  <li>Use it in <code>project.cue</code></li>
+</ol>
+<pre><code>// schema.cue
+#Profile: "debug" | "release" | "small"
+
+profiles: {
     debug:   { optimize: "Debug" }
     release: { optimize: "ReleaseFast" }
+    small:   { optimize: "ReleaseSmall" }
 }</code></pre>
-<p>To add a new profile (e.g. <code>small</code>), add it to <code>#Profile</code>, add its entry to <code>profiles</code>, and it becomes available in <code>project.cue</code>.</p>
 
-<h2>What the Schema Rejects</h2>
+<h2>Validation Behavior</h2>
+<p>All validation happens at <code>cue vet</code> / <code>cue export</code> time — before any Zig code is generated. The schema rejects invalid configurations immediately with clear error messages.</p>
+
 <table>
-  <tr><th>Input</th><th>Error</th></tr>
-  <tr><td><code>kind: "dylib"</code></td><td>Not in <code>#Kind</code> disjunction</td></tr>
-  <tr><td><code>profile: "turbo"</code></td><td>Not in <code>#Profile</code> disjunction</td></tr>
-  <tr><td><code>root: 42</code></td><td>Type mismatch: expected <code>string</code></td></tr>
-  <tr><td>Missing <code>kind</code></td><td>Incomplete value</td></tr>
-  <tr><td>Missing <code>root</code></td><td>Incomplete value</td></tr>
+  <tr><th>Invalid Input</th><th>Error</th><th>Reason</th></tr>
+  <tr><td><code>kind: "dylib"</code></td><td>Not in <code>#Kind</code> disjunction</td><td><code>"dylib"</code> is not one of <code>"exe"</code>, <code>"static"</code>, <code>"shared"</code></td></tr>
+  <tr><td><code>profile: "turbo"</code></td><td>Not in <code>#Profile</code> disjunction</td><td><code>"turbo"</code> is not one of <code>"debug"</code>, <code>"release"</code></td></tr>
+  <tr><td><code>root: 42</code></td><td>Type mismatch</td><td>Expected <code>string</code>, got <code>int</code></td></tr>
+  <tr><td>Missing <code>kind</code></td><td>Incomplete value</td><td><code>kind</code> is required, has no default</td></tr>
+  <tr><td>Missing <code>root</code></td><td>Incomplete value</td><td><code>root</code> is required, has no default</td></tr>
+  <tr><td><code>deps: "core"</code></td><td>Type mismatch</td><td>Expected <code>[...string]</code>, got bare <code>string</code></td></tr>
 </table>
+
+<div class="callout success">
+  <strong>Type safety guarantee</strong>
+  If <code>cue vet</code> passes, the generated <code>build_spec.zig</code> is guaranteed to be valid Zig. The schema eliminates an entire class of build configuration errors.
+</div>
+
+<h2>Complete Schema Source</h2>
+<pre><code>package build
+
+#Kind:    "exe" | "static" | "shared"
+#Profile: "debug" | "release"
+
+#Module: {
+    kind:     #Kind
+    root:     string
+    deps:     [...string] | *[]
+    profile:  #Profile | *"debug"
+}
+
+#Profiles: {
+    debug: {
+        optimize: "Debug"
+    }
+    release: {
+        optimize: "ReleaseFast"
+    }
+}
+
+profiles: #Profiles</code></pre>
+
+<div class="page-footer">
+  <a href="project-file.html">&larr; Project File</a>
+  <a href="examples.html">Next: Examples &rarr;</a>
+</div>
+
 </main>
 </body>
 </html>
