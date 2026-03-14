@@ -1,0 +1,5 @@
+pub fn clamp(val: i32, lo: i32, hi: i32) i32 {
+    if (val < lo) return lo;
+    if (val > hi) return hi;
+    return val;
+}
