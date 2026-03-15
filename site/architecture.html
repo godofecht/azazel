@@ -147,6 +147,33 @@
   <li>Update <code>gen_build_spec.sh</code> if the new kind requires different codegen</li>
 </ol>
 
+<h2>Why CUE Instead of X?</h2>
+<p>Azazel chose CUE over other configuration languages for specific technical reasons:</p>
+
+<table>
+  <tr><th>Alternative</th><th>Why Not</th></tr>
+  <tr><td><strong>YAML / TOML / JSON</strong></td><td>No type system, no validation, no defaults. You'd need a separate schema validator (JSON Schema, etc.) and a separate default resolution step. CUE does both in one pass.</td></tr>
+  <tr><td><strong>Jsonnet / Dhall</strong></td><td>Jsonnet is dynamically typed — errors appear at evaluation, not definition. Dhall has strong types but is Haskell-inspired with a steep learning curve. CUE's syntax is closer to JSON and more approachable.</td></tr>
+  <tr><td><strong>Starlark (Bazel)</strong></td><td>Starlark is a full programming language (Python subset). It can express arbitrary logic, which means arbitrary complexity. CUE is deliberately not Turing-complete — it can only express constraints, not imperative logic.</td></tr>
+  <tr><td><strong>KCL</strong></td><td>KCL is capable but newer with a smaller ecosystem. CUE has production use at scale (Kubernetes ecosystem) and a well-tested constraint solver.</td></tr>
+  <tr><td><strong>Zig comptime</strong></td><td>Zig's comptime is powerful enough to do this, but it mixes configuration with implementation. Separating the config layer means non-Zig-experts can edit <code>project.cue</code> without understanding comptime semantics.</td></tr>
+</table>
+
+<p><strong>The core argument for CUE:</strong> It is the only widely-used configuration language that is simultaneously type-safe, declarative, not Turing-complete, and produces deterministic output. These properties together guarantee that the configuration layer cannot introduce non-determinism or hidden complexity into the build.</p>
+
+<h2>Why Zig Instead of X?</h2>
+<p>The execution layer uses Zig's build system instead of Make, CMake, or a custom build tool:</p>
+
+<table>
+  <tr><th>Alternative</th><th>Why Not</th></tr>
+  <tr><td><strong>Make</strong></td><td>No dependency graph introspection, no cross-compilation, fragile with spaces in paths, platform-dependent behavior.</td></tr>
+  <tr><td><strong>CMake</strong></td><td>CMake's language is notoriously complex and error-prone. Zig's build API is a regular Zig program — debuggable, type-checked, IDE-supported.</td></tr>
+  <tr><td><strong>Ninja</strong></td><td>Ninja is a build executor, not a build system. It needs a generator (CMake, GN, Meson). Zig's build system is both generator and executor.</td></tr>
+  <tr><td><strong>Shell script</strong></td><td>Shell scripts are not cross-platform, have no dependency tracking, and don't support incremental builds. Zig's build system handles all three.</td></tr>
+</table>
+
+<p><strong>The core argument for Zig:</strong> The Zig build system is a first-class Zig program. It has full access to the standard library, runs on every platform Zig supports, and produces deterministic output. The build script is compiled and cached — it runs in milliseconds.</p>
+
 <h2>Future Directions</h2>
 <p>These extensions are under consideration for the Azazel + <a href="https://github.com/godofecht/zaza">Zaza</a> ecosystem:</p>
 <ul>

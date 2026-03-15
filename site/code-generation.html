@@ -144,10 +144,135 @@ pub const modules = [_]Module{
   JSON is used as an internal transport format between CUE and the codegen script — it never enters the Zig compilation pipeline. The Zig compiler only ever sees typed Zig source code.
 </div>
 
+<h2>Script Source Walkthrough</h2>
+<p>The complete <code>gen_build_spec.sh</code> is straightforward. Understanding it helps when debugging or extending the codegen:</p>
+
+<pre><code>#!/bin/sh
+set -e
+cd "$(dirname "$0")"
+
+# Step 1: CUE exports the normalized build data as JSON
+DATA=$(cue export -e build)
+
+# Step 2: Write the Zig type definitions (static header)
+cat &gt; build_spec.zig &lt;&lt;'HEADER'
+const std = @import("std");
+
+pub const Kind = enum { exe, static, shared };
+
+pub const Module = struct {
+    name: []const u8,
+    kind: Kind,
+    root: []const u8,
+    deps: []const []const u8,
+    optimize: std.builtin.OptimizeMode,
+};
+HEADER
+
+# Step 3: Generate the module array from CUE's JSON output
+printf 'pub const modules = [_]Module{\n' &gt;&gt; build_spec.zig
+
+echo "$DATA" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for name, m in data['modules'].items():
+    opt_map = {
+        'Debug': '.Debug',
+        'ReleaseFast': '.ReleaseFast',
+        'ReleaseSafe': '.ReleaseSafe',
+        'ReleaseSmall': '.ReleaseSmall'
+    }
+    deps = m.get('deps', [])
+    deps_str = '&amp;.{ ' + ', '.join(
+        '\"' + d + '\"' for d in deps
+    ) + ' }' if deps else '&amp;.{}'
+    print(f'''    .{{
+        .name = \"{name}\",
+        .kind = .{m['kind']},
+        .root = \"{m['root']}\",
+        .deps = {deps_str},
+        .optimize = {opt_map[m['optimize']]},
+    }},''')
+" &gt;&gt; build_spec.zig
+
+printf '};\n' &gt;&gt; build_spec.zig</code></pre>
+
+<p><strong>Key design decisions in the script:</strong></p>
+<ul>
+  <li><strong>Static header:</strong> The <code>Kind</code> enum and <code>Module</code> struct are hardcoded — they match what <code>build.zig</code> expects. If you add a new kind, you update both.</li>
+  <li><strong>Python for codegen:</strong> Python handles the JSON-to-Zig transformation because CUE doesn't have built-in Zig string templating. The Python is deliberately simple — a single comprehension loop.</li>
+  <li><strong>No error handling:</strong> The script uses <code>set -e</code> to fail fast. If CUE validation fails, the script stops before writing any Zig.</li>
+</ul>
+
+<h2>The Zig Build Engine</h2>
+<p>The generated <code>build_spec.zig</code> is consumed by <code>build.zig</code>. Here's the complete build engine:</p>
+
+<pre><code>const std = @import("std");
+const spec = @import("build_spec.zig");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+
+    // Pass 1: Create all compile steps
+    var built = std.StringHashMap(
+        *std.Build.Step.Compile
+    ).init(b.allocator);
+    defer built.deinit();
+
+    for (spec.modules) |m| {
+        const step = switch (m.kind) {
+            .exe =&gt; b.addExecutable(.{
+                .name = m.name,
+                .root_source_file = b.path(m.root),
+                .optimize = m.optimize,
+                .target = target,
+            }),
+            .static =&gt; b.addStaticLibrary(.{
+                .name = m.name,
+                .root_source_file = b.path(m.root),
+                .optimize = m.optimize,
+                .target = target,
+            }),
+            .shared =&gt; b.addSharedLibrary(.{
+                .name = m.name,
+                .root_source_file = b.path(m.root),
+                .optimize = m.optimize,
+                .target = target,
+            }),
+        };
+        built.put(m.name, step) catch unreachable;
+    }
+
+    // Pass 2: Link dependencies and install
+    for (spec.modules) |m| {
+        const step = built.get(m.name).?;
+        for (m.deps) |dep| {
+            step.linkLibrary(built.get(dep).?);
+        }
+        if (m.kind == .exe) b.installArtifact(step);
+    }
+}</code></pre>
+
+<p><strong>Why two passes?</strong> A module might depend on another module that appears later in the array. Pass 1 creates all steps first, Pass 2 links them. This decouples definition order from dependency order.</p>
+
+<p><strong>Why <code>catch unreachable</code>?</strong> The hash map allocation can only fail if the allocator runs out of memory. In a Zig build script, the allocator is the build system's arena — it doesn't run out. Using <code>unreachable</code> keeps the code clean.</p>
+
+<p><strong>Why <code>.?</code> on hash map lookups?</strong> If a dependency name doesn't match any module, this produces a clear panic with the failing assertion. In practice, if CUE validated successfully, all names will resolve.</p>
+
 <h2>Regenerating</h2>
 <p>Run the script whenever you change <code>project.cue</code> or <code>export.cue</code>:</p>
 <pre><code>./gen_build_spec.sh</code></pre>
-<p><code>build_spec.zig</code> is gitignored — it is a generated build artifact, not a source file.</p>
+<p><code>build_spec.zig</code> is gitignored — it is a generated build artifact, not a source file. You can safely delete it and regenerate at any time.</p>
+
+<h2>Comparison: Azazel vs. Traditional Approaches</h2>
+<table>
+  <tr><th>Approach</th><th>Config Format</th><th>Runtime Cost</th><th>Type Safety</th><th>Ceremony</th></tr>
+  <tr><td><strong>Azazel</strong></td><td>CUE → Zig source</td><td>Zero</td><td>CUE + Zig compiler</td><td>Minimal</td></tr>
+  <tr><td>JSON config</td><td>JSON file</td><td><code>std.json</code> parsing</td><td>None until runtime</td><td>Low</td></tr>
+  <tr><td>CMake</td><td>CMakeLists.txt</td><td>CMake interpreter</td><td>None</td><td>High</td></tr>
+  <tr><td>Meson</td><td>meson.build (Python-like)</td><td>Python interpreter</td><td>Limited</td><td>Medium</td></tr>
+  <tr><td>Bazel</td><td>Starlark</td><td>Starlark interpreter</td><td>Limited</td><td>High</td></tr>
+</table>
 
 <h2>Relationship to Zaza</h2>
 <p>In the <a href="https://github.com/godofecht/zaza">Zaza</a> build system, this same codegen pattern can be extended to produce more complex build specifications — including C/C++ interop targets, WebAssembly outputs, and CMake integration modules. Azazel provides the minimal, principled core that Zaza's extended pipeline builds upon.</p>
