@@ -89,10 +89,41 @@ zig build             # compiles everything declared in the spec</code></pre>
   <code>project.cue</code> is the only file you routinely edit. The schema, codegen, and build engine are infrastructure — set once, never touched.
 </div>
 
+<h2>Troubleshooting</h2>
+
+<h3><code>cue vet</code> fails with "incomplete value"</h3>
+<p>You're missing a required field (<code>kind</code> or <code>root</code>). CUE reports which field is incomplete — add it to the module definition.</p>
+
+<h3><code>cue export</code> fails with "undefined" errors</h3>
+<p>Your <code>export.cue</code> references a module name that doesn't exist in <code>project.cue</code>. Ensure every key in the <code>_modules</code> map has a corresponding definition.</p>
+
+<h3><code>zig build</code> fails with "file not found"</h3>
+<p>The <code>root</code> path in your module doesn't match an actual file. Check that the path is relative to the project root and the file exists.</p>
+
+<h3><code>gen_build_spec.sh</code> has no output</h3>
+<p>Ensure <code>cue</code> and <code>python3</code> are on your <code>PATH</code>. Run <code>cue export -e build</code> separately to check if CUE is producing output.</p>
+
+<h3>Changes to <code>project.cue</code> aren't reflected</h3>
+<p>You need to regenerate: <code>./gen_build_spec.sh</code>. The Zig build reads from <code>build_spec.zig</code>, which is only updated when you run the codegen script.</p>
+
+<h2>Understanding the Data Flow</h2>
+<p>It's important to understand what happens at each stage, because when something goes wrong, knowing <em>where</em> in the pipeline the error occurs tells you <em>what</em> to fix:</p>
+
+<table>
+  <tr><th>Stage</th><th>Command</th><th>Errors Mean</th></tr>
+  <tr><td>Validation</td><td><code>cue vet</code></td><td>Your config has type errors or missing fields</td></tr>
+  <tr><td>Export</td><td><code>cue export -e build</code></td><td>Your export.cue doesn't wire modules correctly</td></tr>
+  <tr><td>Codegen</td><td><code>./gen_build_spec.sh</code></td><td>The script has a bug (rare) or CUE output changed</td></tr>
+  <tr><td>Compile</td><td><code>zig build</code></td><td>Your Zig source code has errors, not your config</td></tr>
+</table>
+
+<p>The first three stages are <strong>configuration errors</strong>. The last stage is a <strong>code error</strong>. If <code>cue vet</code> and <code>cue export</code> pass, you know your configuration is valid and the issue is in your Zig source files.</p>
+
 <h2>Next Steps</h2>
 <ul>
   <li><a href="project-file.html">Project File</a> — learn all the fields available to you</li>
-  <li><a href="examples.html">Examples</a> — see real configurations for different project shapes</li>
+  <li><a href="examples.html">Examples</a> — eight real configurations covering every common pattern</li>
+  <li><a href="code-generation.html">Code Generation</a> — understand exactly what the codegen script produces</li>
   <li><a href="https://github.com/godofecht/zaza">Zaza</a> — integrate with the full Zaza build pipeline</li>
 </ul>
 

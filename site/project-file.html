@@ -110,6 +110,83 @@ app: #Module &amp; {
 </table>
 <p>Each module can have its own profile. A common pattern is debug libraries with a release executable during development, and release everything for production.</p>
 
+<h2>Dependency Resolution</h2>
+<p>Understanding how dependencies work is critical to using Azazel effectively.</p>
+
+<h3>How <code>deps</code> are resolved</h3>
+<p>When you write <code>deps: ["core"]</code>, here's what happens at each stage:</p>
+<ol>
+  <li><strong>CUE validation:</strong> CUE checks that <code>"core"</code> is a valid string. It does <em>not</em> check that a module named <code>core</code> exists — CUE only validates types, not cross-references.</li>
+  <li><strong>Codegen:</strong> The string <code>"core"</code> is emitted verbatim into <code>build_spec.zig</code> as part of the <code>deps</code> array.</li>
+  <li><strong>Zig build:</strong> <code>build.zig</code> looks up <code>"core"</code> in its hash map of compiled modules. If the name doesn't match any module, the build panics.</li>
+</ol>
+
+<div class="callout warning">
+  <strong>Important</strong>
+  Dependency names are resolved by exact string match against module names. A typo in the deps array will only be caught at <code>zig build</code> time, not during CUE validation. Double-check your spelling.
+</div>
+
+<h3>Dependency ordering</h3>
+<p>You can define modules in any order in <code>project.cue</code>. Azazel's two-pass build engine handles forward references — a module can depend on a module that appears later in the file. This is unlike Makefiles, where order matters.</p>
+
+<h3>Circular dependencies</h3>
+<p>Circular dependencies (A depends on B, B depends on A) will cause <code>zig build</code> to fail. Zig's linker does not support circular library dependencies. If you need bidirectional communication between modules, refactor the shared interface into a third module.</p>
+
+<h2>Common Patterns</h2>
+
+<h3>All-release production build</h3>
+<pre><code>// Set every module to release
+core: #Module &amp; {
+    kind:    "static"
+    root:    "src/core.zig"
+    profile: "release"
+}
+
+app: #Module &amp; {
+    kind:    "exe"
+    root:    "src/main.zig"
+    deps:    ["core"]
+    profile: "release"
+}</code></pre>
+
+<h3>Debug library + release executable</h3>
+<pre><code>// Safety checks in the library, max perf in the exe
+core: #Module &amp; {
+    kind: "static"
+    root: "src/core.zig"
+    // profile defaults to "debug" — safety checks on
+}
+
+app: #Module &amp; {
+    kind:    "exe"
+    root:    "src/main.zig"
+    deps:    ["core"]
+    profile: "release"
+}</code></pre>
+<p>This catches bugs in library code (via Zig's safety checks) while still getting optimized executable performance.</p>
+
+<h3>Multiple executables sharing a library</h3>
+<pre><code>// One library, many consumers
+shared_lib: #Module &amp; {
+    kind:    "static"
+    root:    "src/lib.zig"
+    profile: "release"
+}
+
+tool_a: #Module &amp; {
+    kind: "exe"
+    root: "src/tool_a.zig"
+    deps: ["shared_lib"]
+    profile: "release"
+}
+
+tool_b: #Module &amp; {
+    kind: "exe"
+    root: "src/tool_b.zig"
+    deps: ["shared_lib"]
+    profile: "release"
+}</code></pre>
+
 <div class="page-footer">
   <a href="getting-started.html">&larr; Getting Started</a>
   <a href="schema-reference.html">Next: Schema Reference &rarr;</a>

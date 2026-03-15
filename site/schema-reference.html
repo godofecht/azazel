@@ -107,6 +107,63 @@ profiles: {
   If <code>cue vet</code> passes, the generated <code>build_spec.zig</code> is guaranteed to be valid Zig. The schema eliminates an entire class of build configuration errors.
 </div>
 
+<h2>Understanding CUE Syntax</h2>
+<p>If you're new to CUE, here are the key concepts used in the Azazel schema:</p>
+
+<h3>Definitions (<code>#</code> prefix)</h3>
+<p>Names starting with <code>#</code> are <strong>definitions</strong> — they define types but don't produce output. <code>#Module</code> is a type, not a value. You create values by unifying a definition with concrete data using <code>&amp;</code>:</p>
+<pre><code>// #Module is the type definition
+// app is a concrete value that satisfies the type
+app: #Module &amp; {
+    kind: "exe"
+    root: "src/main.zig"
+}</code></pre>
+
+<h3>Disjunctions (<code>|</code>)</h3>
+<p>The <code>|</code> operator creates a closed set of allowed values (like an enum in other languages):</p>
+<pre><code>#Kind: "exe" | "static" | "shared"</code></pre>
+<p>Any value assigned to a <code>#Kind</code> field must be exactly one of these three strings. Anything else is a validation error.</p>
+
+<h3>Defaults (<code>*</code>)</h3>
+<p>The <code>*</code> operator marks a preferred value in a disjunction:</p>
+<pre><code>profile: #Profile | *"debug"</code></pre>
+<p>This means: "profile must be a valid <code>#Profile</code>, and if not specified, defaults to <code>"debug"</code>." The default is applied during <code>cue export</code> — the user never sees incomplete values.</p>
+
+<h3>Open vs. closed lists</h3>
+<p><code>[...string]</code> means "a list of zero or more strings." The <code>...</code> makes it open-ended — any length is valid. Without <code>...</code>, CUE would require an exact-length match.</p>
+
+<h3>Unification (<code>&amp;</code>)</h3>
+<p>The <code>&amp;</code> operator merges two values, checking that they're compatible. When you write <code>#Module &amp; { kind: "exe" }</code>, CUE verifies that <code>kind: "exe"</code> satisfies the <code>#Kind</code> constraint, that <code>root</code> is still required, and that defaults for <code>deps</code> and <code>profile</code> are applied.</p>
+
+<h2>How the Export Pipeline Works</h2>
+<p><code>export.cue</code> ties everything together. Here's the full flow:</p>
+
+<pre><code>// export.cue
+_modules: {
+    "core": core    // references the 'core' value from project.cue
+    "app":  app     // references the 'app' value from project.cue
+}
+
+build: modules: {
+    for k, v in _modules {
+        (k): {
+            kind:     v.kind
+            root:     v.root
+            deps:     v.deps
+            optimize: profiles[v.profile].optimize
+        }
+    }
+}</code></pre>
+
+<p>The <code>for</code> comprehension iterates over <code>_modules</code>, and for each module, it:</p>
+<ol>
+  <li>Copies the <code>kind</code>, <code>root</code>, and <code>deps</code> fields directly</li>
+  <li>Resolves <code>profile</code> through the <code>profiles</code> lookup table to get the Zig-native <code>optimize</code> value</li>
+  <li>Produces a flat, fully-resolved struct with no remaining references or defaults</li>
+</ol>
+
+<p>The <code>_</code> prefix on <code>_modules</code> marks it as hidden — it won't appear in the exported output. Only the <code>build</code> struct is exported.</p>
+
 <h2>Complete Schema Source</h2>
 <pre><code>package build
 
