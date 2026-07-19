@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-and-test:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +24,7 @@ jobs:
       - name: Install cue
         run: |
           curl -fsSL -o cue.tar.gz \
-            "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_darwin_arm64.tar.gz"
+            "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_linux_amd64.tar.gz"
           tar -xzf cue.tar.gz cue
           sudo mv cue /usr/local/bin/
           rm cue.tar.gz
