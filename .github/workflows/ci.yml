@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.1
+
+      - uses: cue-lang/setup-cue@v1.0.1
+
+      # build_spec.zig is generated from project.cue and is gitignored, so a
+      # fresh clone has to produce it before anything will build.
+      - name: Generate build spec
+        run: ./gen_build_spec.sh
+
+      # build_spec.zig is gitignored, so `git diff` cannot check it. Compare a
+      # second run against the first instead: the generator must be
+      # deterministic, or build.zig is walking a spec nobody can reproduce.
+      - name: Check the generator is deterministic
+        run: |
+          cp build_spec.zig /tmp/build_spec.first
+          ./gen_build_spec.sh
+          diff -u /tmp/build_spec.first build_spec.zig \
+            || { echo "gen_build_spec.sh is not deterministic"; exit 1; }
+
+      - name: Build
+        run: zig build
+
+      - name: Test
+        run: zig build test --summary all
