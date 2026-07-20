@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Pinned to match the version used locally. The generator's output has to be
+  # reproducible, so the cue version is part of that contract.
+  CUE_VERSION: v0.16.0
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
+      - name: Install cue
+        run: |
+          curl -fsSL -o cue.tar.gz \
+            "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_linux_amd64.tar.gz"
+          tar -xzf cue.tar.gz cue
+          sudo mv cue /usr/local/bin/
+          rm cue.tar.gz
+          cue version
+
+      # build_spec.zig is generated from project.cue and is gitignored, so a
+      # fresh clone has to produce it before anything will build.
+      - name: Generate build spec
+        run: ./gen_build_spec.sh
+
+      # build_spec.zig is gitignored, so `git diff` cannot check it. Compare a
+      # second run against the first instead: the generator must be
+      # deterministic, or build.zig is walking a spec nobody can reproduce.
+      - name: Check the generator is deterministic
+        run: |
+          cp build_spec.zig build_spec.first
+          ./gen_build_spec.sh
+          diff -u build_spec.first build_spec.zig \
+            || { echo "gen_build_spec.sh is not deterministic"; exit 1; }
+          rm build_spec.first
+
+      - name: Build
+        run: zig build
+
+      - name: Test
+        run: zig build test --summary all
