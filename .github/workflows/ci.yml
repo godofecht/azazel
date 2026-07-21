@@ -14,12 +14,21 @@ env:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # build.zig uses the root_module API, which exists in both. 0.15
+        # removed the older addStaticLibrary/addSharedLibrary form; 0.14.1
+        # accepts the newer one. Testing both keeps that compatibility honest
+        # rather than assumed.
+        zig: ["0.14.1", "0.15.2"]
+    name: build-and-test (zig ${{ matrix.zig }})
     steps:
       - uses: actions/checkout@v4
 
       - uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.1
+          version: ${{ matrix.zig }}
 
       - name: Install cue
         run: |
