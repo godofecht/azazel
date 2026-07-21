@@ -8,24 +8,29 @@ pub fn build(b: *std.Build) void {
     defer built.deinit();
 
     for (spec.modules) |m| {
+        // Zig 0.15 takes target and optimize on the module rather than on the
+        // compile step, and folds addStaticLibrary/addSharedLibrary into
+        // addLibrary with an explicit linkage.
+        const mod = b.createModule(.{
+            .root_source_file = b.path(m.root),
+            .target = target,
+            .optimize = m.optimize,
+        });
+
         const step = switch (m.kind) {
             .exe => b.addExecutable(.{
                 .name = m.name,
-                .root_source_file = b.path(m.root),
-                .optimize = m.optimize,
-                .target = target,
+                .root_module = mod,
             }),
-            .static => b.addStaticLibrary(.{
+            .static => b.addLibrary(.{
                 .name = m.name,
-                .root_source_file = b.path(m.root),
-                .optimize = m.optimize,
-                .target = target,
+                .root_module = mod,
+                .linkage = .static,
             }),
-            .shared => b.addSharedLibrary(.{
+            .shared => b.addLibrary(.{
                 .name = m.name,
-                .root_source_file = b.path(m.root),
-                .optimize = m.optimize,
-                .target = target,
+                .root_module = mod,
+                .linkage = .dynamic,
             }),
         };
 
@@ -56,9 +61,11 @@ pub fn build(b: *std.Build) void {
 
     for (suites) |suite| {
         const t = b.addTest(.{
-            .root_source_file = b.path(suite),
-            .target = target,
-            .optimize = .Debug,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(suite),
+                .target = target,
+                .optimize = .Debug,
+            }),
         });
         const run_t = b.addRunArtifact(t);
         // build_spec_test reads module roots off disk, so run from the repo root.
