@@ -40,7 +40,9 @@ pub fn build(b: *std.Build) void {
     for (spec.modules) |m| {
         const step = built.get(m.name).?;
         for (m.deps) |dep| {
-            step.linkLibrary(built.get(dep).?);
+            // 0.16 moved linkLibrary from Compile onto Module. Module.linkLibrary
+            // exists in 0.14 and 0.15 too, so this spelling works on all three.
+            step.root_module.linkLibrary(built.get(dep).?);
         }
         if (m.kind == .exe or m.kind == .shared or m.kind == .static) {
             b.installArtifact(step);

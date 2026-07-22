@@ -1,7 +1,7 @@
 # Azazel
 
 [![CI](https://github.com/godofecht/azazel/actions/workflows/ci.yml/badge.svg)](https://github.com/godofecht/azazel/actions/workflows/ci.yml)
-[![Zig](https://img.shields.io/badge/zig-0.14.1%20%7C%200.15.2-f7a41d)](https://ziglang.org/)
+[![Zig](https://img.shields.io/badge/zig-0.14.1%20%7C%200.15.2%20%7C%200.16.0-f7a41d)](https://ziglang.org/)
 
 A deterministic build configuration layer powered by **CUE** for constraint validation and **Zig** for execution. The configuration frontend for [Zaza](https://github.com/godofecht/zaza).
 
