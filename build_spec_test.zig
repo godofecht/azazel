@@ -97,17 +97,26 @@ test "dependency graph is acyclic" {
 
 // --- source files on disk --------------------------------------------------
 
+/// Zig 0.16 moved the filesystem under std.Io and threads an Io handle through
+/// every call, so std.fs.cwd no longer exists. Both branches are valid Zig, and
+/// only the taken one is analysed because the condition is comptime known.
+fn rootExists(path: []const u8) bool {
+    if (comptime @hasDecl(std.fs, "cwd")) {
+        std.fs.cwd().access(path, .{}) catch return false;
+    } else {
+        std.Io.Dir.cwd().access(testing.io, path, .{}) catch return false;
+    }
+    return true;
+}
+
 test "every module root exists on disk" {
     // The generator copies paths verbatim out of CUE; a typo there produces a
     // build failure with no pointer back to project.cue.
-    var dir = try std.fs.cwd().openDir(".", .{});
-    defer dir.close();
-
     for (spec.modules) |m| {
-        dir.access(m.root, .{}) catch |err| {
-            std.debug.print("missing root for module '{s}': {s} ({s})\n", .{ m.name, m.root, @errorName(err) });
-            return err;
-        };
+        if (!rootExists(m.root)) {
+            std.debug.print("missing root for module '{s}': {s}\n", .{ m.name, m.root });
+            return error.ModuleRootMissing;
+        }
     }
 }
 

@@ -21,7 +21,7 @@ jobs:
         # removed the older addStaticLibrary/addSharedLibrary form; 0.14.1
         # accepts the newer one. Testing both keeps that compatibility honest
         # rather than assumed.
-        zig: ["0.14.1", "0.15.2"]
+        zig: ["0.14.1", "0.15.2", "0.16.0"]
     name: build-and-test (zig ${{ matrix.zig }})
     steps:
       - uses: actions/checkout@v4
