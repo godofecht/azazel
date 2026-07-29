@@ -117,14 +117,14 @@ cd examples/03-services
 schema field with a worked example, how `build_spec.zig` maps onto
 `build.zig`, and troubleshooting for the common failures.
 
-Also published at [abhishek-shivakumar.com/azazel](https://abhishek-shivakumar.com/azazel/)
+Published at [godofecht.github.io/azazel](https://godofecht.github.io/azazel/)
 
-- [Getting Started](https://abhishek-shivakumar.com/azazel/getting-started.html)
-- [Project File](https://abhishek-shivakumar.com/azazel/project-file.html)
-- [Schema Reference](https://abhishek-shivakumar.com/azazel/schema-reference.html)
-- [Examples](https://abhishek-shivakumar.com/azazel/examples.html)
-- [Code Generation](https://abhishek-shivakumar.com/azazel/code-generation.html)
-- [Architecture](https://abhishek-shivakumar.com/azazel/architecture.html)
+- [Getting Started](https://godofecht.github.io/azazel/getting-started.html)
+- [Project File](https://godofecht.github.io/azazel/project-file.html)
+- [Schema Reference](https://godofecht.github.io/azazel/schema-reference.html)
+- [Examples](https://godofecht.github.io/azazel/examples.html)
+- [Code Generation](https://godofecht.github.io/azazel/code-generation.html)
+- [Architecture](https://godofecht.github.io/azazel/architecture.html)
 
 ## Part of the Zaza Ecosystem
 
