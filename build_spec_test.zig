@@ -161,3 +161,27 @@ test "shared and static modules are not named like executables" {
         }
     }
 }
+
+// --- link mode -------------------------------------------------------------
+
+test "shared modules are linked over the ABI" {
+    // An import-consumed shared library is a contradiction: a .dylib/.so is an
+    // ABI artifact. The schema forces link: "abi" for shared; assert it held.
+    for (spec.modules) |m| {
+        if (m.kind == .shared) try testing.expectEqual(spec.Link.abi, m.link);
+    }
+}
+
+test "an import dependency resolves to a static module" {
+    // build.zig only merges a dependency as a Zig module when it is a static
+    // module marked link: "import". Exes and shared libs are never @imported.
+    for (spec.modules) |m| {
+        for (m.deps) |dep| {
+            for (spec.modules) |d| {
+                if (std.mem.eql(u8, d.name, dep) and d.link == .import) {
+                    try testing.expectEqual(spec.Kind.static, d.kind);
+                }
+            }
+        }
+    }
+}

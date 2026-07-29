@@ -11,12 +11,14 @@ cat > build_spec.zig <<'HEADER'
 const std = @import("std");
 
 pub const Kind = enum { exe, static, shared };
+pub const Link = enum { abi, import };
 
 pub const Module = struct {
     name: []const u8,
     kind: Kind,
     root: []const u8,
     deps: []const []const u8,
+    link: Link,
     optimize: std.builtin.OptimizeMode,
 };
 
@@ -32,6 +34,7 @@ mods = data['modules']
 
 for name, m in mods.items():
     kind = '.' + m['kind']
+    link = '.' + m.get('link', 'abi')
     opt_map = {'Debug': '.Debug', 'ReleaseFast': '.ReleaseFast', 'ReleaseSafe': '.ReleaseSafe', 'ReleaseSmall': '.ReleaseSmall'}
     opt = opt_map[m['optimize']]
     deps = m.get('deps', [])
@@ -44,6 +47,7 @@ for name, m in mods.items():
         .kind = {kind},
         .root = \"{m['root']}\",
         .deps = {deps_str},
+        .link = {link},
         .optimize = {opt},
     }},''')
 " >> build_spec.zig
