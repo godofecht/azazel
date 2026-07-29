@@ -3,160 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Azazel — CUE + Zig Deterministic Build System</title>
-<meta name="description" content="A deterministic build system using CUE for constraint validation and Zig for execution. No JSON runtime, no flags, no ceremony.">
+<title>azazel · A deterministic build configuration layer for Zig, powered by CUE</title>
+<meta name="description" content="A deterministic build configuration layer for Zig. CUE validates a project.cue and generates typed Zig source; zig build compiles it. No JSON runtime, no flags.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <nav>
   <a href="index.html" class="logo">azazel</a>
-  <div class="tagline">CUE + Zig deterministic build system</div>
-  <span class="version">v0.1.0</span>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
   <div class="section-label">Guide</div>
   <a href="index.html" class="active">Overview</a>
-  <a href="getting-started.html">Getting Started</a>
-  <a href="project-file.html">Project File</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
   <a href="schema-reference.html">Schema Reference</a>
-  <div class="section-label">Advanced</div>
-  <a href="examples.html">Examples</a>
   <a href="code-generation.html">Code Generation</a>
-  <a href="architecture.html">Architecture</a>
+  <a href="examples.html">Examples</a>
+  <a href="troubleshooting.html">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
   <div class="nav-footer">
     <a href="https://github.com/godofecht/azazel">GitHub</a>
-    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
   </div>
 </nav>
 <main>
 
 <div class="hero">
-  <h1>Azazel</h1>
-  <p class="hero-sub">A deterministic build configuration layer powered by <strong>CUE</strong> for constraint validation and <strong>Zig</strong> for execution. The configuration frontend for <a href="https://github.com/godofecht/zaza">Zaza</a>.</p>
-  <div class="hero-badges">
-    <span class="hero-badge">Deterministic</span>
-    <span class="hero-badge">No JSON Runtime</span>
-    <span class="hero-badge">Compile-time Only</span>
-    <span class="hero-badge">Zero Ceremony</span>
-  </div>
+  <h1 id="azazel">Azazel</h1>
+  <p class="hero-sub">A build configuration layer for Zig. You describe your modules in CUE. CUE
+type-checks them and fills in defaults. A shell script turns the result into a
+Zig source file. <code>build.zig</code> walks that file and produces the compile graph.</p>
 </div>
 
-<h2>How It Works</h2>
-<p>Azazel replaces YAML, TOML, and JSON build configuration with a type-safe CUE schema that generates Zig source code directly. No parsing happens at build time — the configuration is baked into your binary as compile-time constants.</p>
+<p>Source: &lt;https://github.com/godofecht/azazel&gt;</p>
 
-<div class="diagram">
-<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <!-- Boxes -->
-  <rect x="10" y="60" width="130" height="70" rx="10" fill="#181d27" stroke="#252d3a" stroke-width="1.5"/>
-  <rect x="185" y="60" width="130" height="70" rx="10" fill="#181d27" stroke="#252d3a" stroke-width="1.5"/>
-  <rect x="360" y="60" width="130" height="70" rx="10" fill="#181d27" stroke="#252d3a" stroke-width="1.5"/>
-  <rect x="535" y="60" width="130" height="70" rx="10" fill="#181d27" stroke="#252d3a" stroke-width="1.5"/>
-  <rect x="10" y="155" width="130" height="30" rx="6" fill="#0f1319" stroke="#252d3a" stroke-width="1"/>
-  <rect x="185" y="155" width="130" height="30" rx="6" fill="#0f1319" stroke="#252d3a" stroke-width="1"/>
-  <rect x="360" y="155" width="130" height="30" rx="6" fill="#0f1319" stroke="#252d3a" stroke-width="1"/>
-  <rect x="535" y="155" width="130" height="30" rx="6" fill="#0f1319" stroke="#252d3a" stroke-width="1"/>
-  <!-- Labels -->
-  <text x="75" y="90" text-anchor="middle" fill="#e6edf3" font-family="Inter, sans-serif" font-size="13" font-weight="600">project.cue</text>
-  <text x="75" y="110" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">You edit this</text>
-  <text x="250" y="90" text-anchor="middle" fill="#e6edf3" font-family="Inter, sans-serif" font-size="13" font-weight="600">CUE Validate</text>
-  <text x="250" y="110" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">schema.cue</text>
-  <text x="425" y="90" text-anchor="middle" fill="#e6edf3" font-family="Inter, sans-serif" font-size="13" font-weight="600">build_spec.zig</text>
-  <text x="425" y="110" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Generated source</text>
-  <text x="600" y="90" text-anchor="middle" fill="#e6edf3" font-family="Inter, sans-serif" font-size="13" font-weight="600">zig build</text>
-  <text x="600" y="110" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Compile &amp; link</text>
-  <!-- Phase labels -->
-  <text x="75" y="175" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="10">Human</text>
-  <text x="250" y="175" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="10">Constraint</text>
-  <text x="425" y="175" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10">Codegen</text>
-  <text x="600" y="175" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10">Execution</text>
-  <!-- Arrows -->
-  <path d="M145 95 L180 95" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow)"/>
-  <path d="M320 95 L355 95" stroke="#d29922" stroke-width="2" marker-end="url(#arrow2)"/>
-  <path d="M495 95 L530 95" stroke="#bc8cff" stroke-width="2" marker-end="url(#arrow3)"/>
-  <!-- Outputs -->
-  <rect x="690" y="70" width="80" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="730" y="93" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">Binary</text>
-  <text x="730" y="108" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="9">.exe / .a / .so</text>
-  <path d="M670 95 L685 95" stroke="#3fb950" stroke-width="2" marker-end="url(#arrow4)"/>
-  <!-- Top label -->
-  <text x="390" y="35" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="12" font-weight="600" letter-spacing="0.1em">AZAZEL PIPELINE</text>
-  <line x1="280" y1="40" x2="500" y2="40" stroke="#252d3a" stroke-width="1"/>
-  <!-- Arrow markers -->
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-    <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#bc8cff"/></marker>
-    <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#3fb950"/></marker>
-  </defs>
-</svg>
-</div>
+<h2 id="the-problem">The problem</h2>
 
-<ol>
-  <li>Edit <code>project.cue</code> — declare your modules, dependencies, and profiles in under 15 lines</li>
-  <li>Run <code>./gen_build_spec.sh</code> — CUE validates against the schema and emits a typed Zig source file</li>
-  <li>Run <code>zig build</code> — the Zig compiler reads the spec at compile time with zero parsing overhead</li>
-</ol>
+<p>A <code>build.zig</code> starts as twenty lines and ends as four hundred. Module wiring,
+optimization modes, link edges and install rules all live in imperative code,
+mixed with real logic. Adding a library means editing that code. Answering
+"what does this project build, and how" means reading it.</p>
 
-<h2>Quick Start</h2>
-<pre><code>git clone https://github.com/godofecht/azazel.git
-cd azazel
-./gen_build_spec.sh    # validate + generate
-zig build              # compile
-./zig-out/bin/app      # run</code></pre>
+<p>Azazel splits the description from the execution.</p>
 
-<h2>Why Azazel?</h2>
-<div class="card-grid">
-  <div class="card">
-    <h4>Deterministic</h4>
-    <p>CUE's constraint-based type system guarantees schema validation and default resolution. Same input always produces the same output.</p>
-  </div>
-  <div class="card">
-    <h4>Minimal Surface</h4>
-    <p>Users interact with exactly 4 fields: <code>kind</code>, <code>root</code>, <code>deps</code>, and <code>profile</code>. Nothing else leaks through.</p>
-  </div>
-  <div class="card">
-    <h4>No JSON Runtime</h4>
-    <p>CUE generates Zig source code directly. No <code>std.json</code>, no YAML parser, no runtime config loading. Pure compile-time constants.</p>
-  </div>
-  <div class="card">
-    <h4>Separation of Concerns</h4>
-    <p>CUE handles declarations and constraints. Zig handles compilation and linking. Each layer does exactly one thing well.</p>
-  </div>
-</div>
+<p><code>project.cue</code> holds the description. It is data, so a schema can validate it.
+A typo in a <code>kind</code>, a wrong type on a field, an unrecognised option: these are
+rejected by <code>cue</code> before any Zig runs, with a message pointing at the line.</p>
 
-<h2>What It Looks Like</h2>
-<p>A complete two-module project configuration:</p>
-<pre><code>package build
+<p><code>build.zig</code> holds the execution. It is a fixed loop, about forty lines, and it
+does not change when your project does.</p>
 
-core: #Module &amp; {
-    kind: "static"
-    root: "src/core.zig"
-}
+<p>The generated file in between is Zig source, so there is no parser and no JSON
+at build time. The module list is a compile-time constant.</p>
 
-app: #Module &amp; {
-    kind:    "exe"
-    root:    "src/main.zig"
-    deps:    ["core"]
-    profile: "release"
-}</code></pre>
-<p>That's it. No flags, no platform triples, no macro syntax, no include paths. Everything else is resolved by schema defaults.</p>
+<p>The surface is deliberately small. Four fields per module. No compiler flags,
+no include paths, no platform triples, no linker options. <code>#Module</code> is a
+closed CUE definition, so there is no escape hatch either:</p>
 
-<h2>Relationship to Zaza</h2>
-<p>Azazel is the declarative configuration frontend for <a href="https://github.com/godofecht/zaza">Zaza</a>, a Zig-driven build system for modern C, C++, Zig, CMake-interop, and WebAssembly workflows. Where Zaza handles the full build execution pipeline, Azazel provides the type-safe configuration layer that feeds into it.</p>
+<pre><code>$ cue export -e build
+app.flags: field not allowed:
+    ./project.cue:8:2</code></pre>
 
-<div class="callout">
-  <strong>Note</strong>
-  Azazel can be used standalone with any Zig project — it does not require Zaza. However, when paired with Zaza, it provides end-to-end deterministic builds from configuration through execution.
-</div>
-
-<div class="link-row">
-  <a href="getting-started.html" class="btn btn-primary">Get Started</a>
-  <a href="https://github.com/godofecht/azazel" class="btn btn-secondary">View on GitHub</a>
-  <a href="https://github.com/godofecht/zaza" class="btn btn-secondary">Zaza Build System</a>
-</div>
+<p>If you need something outside those four fields, <code>build.zig</code> is still an
+ordinary <code>build.zig</code> and you can add it there.</p>
 
 <div class="page-footer">
-  <span><a href="https://github.com/godofecht/azazel">Azazel</a> &middot; Part of the <a href="https://github.com/godofecht/zaza">Zaza</a> ecosystem</span>
-  <a href="getting-started.html">Next: Getting Started &rarr;</a>
+  <span><a href="https://github.com/godofecht/azazel">azazel on GitHub</a></span>
+  <a href="pipeline.html">Next: The Pipeline &rarr;</a>
 </div>
 
 </main>
