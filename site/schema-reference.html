@@ -3,194 +3,605 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Schema Reference — Azazel</title>
+<title>Schema Reference · azazel</title>
+<meta name="description" content="Every #Module field with a worked example: kind, root, deps, link (abi vs import), profile, and the #Kind and #Profile enums.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <nav>
   <a href="index.html" class="logo">azazel</a>
-  <div class="tagline">CUE + Zig deterministic build system</div>
-  <span class="version">v0.1.0</span>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
   <div class="section-label">Guide</div>
   <a href="index.html">Overview</a>
-  <a href="getting-started.html">Getting Started</a>
-  <a href="project-file.html">Project File</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
   <a href="schema-reference.html" class="active">Schema Reference</a>
-  <div class="section-label">Advanced</div>
-  <a href="examples.html">Examples</a>
   <a href="code-generation.html">Code Generation</a>
-  <a href="architecture.html">Architecture</a>
+  <a href="examples.html">Examples</a>
+  <a href="troubleshooting.html">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
   <div class="nav-footer">
     <a href="https://github.com/godofecht/azazel">GitHub</a>
-    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
   </div>
 </nav>
 <main>
 
-<h1>Schema Reference</h1>
-<p class="page-subtitle"><code>schema.cue</code> defines the complete type system. It enforces correctness at configuration time — before any Zig code is generated. You should rarely need to modify it.</p>
+<h1 id="schema-reference">Schema Reference</h1>
 
-<h2>Type Definitions</h2>
+<p><code>schema.cue</code> in full:</p>
 
-<h3><code>#Kind</code> <span class="badge">enum</span></h3>
-<p>The output artifact type for a module.</p>
-<pre><code>#Kind: "exe" | "static" | "shared"</code></pre>
-<table>
-  <tr><th>Value</th><th>Zig Build API</th><th>Output</th></tr>
-  <tr><td><code>"exe"</code></td><td><code>b.addExecutable()</code></td><td>Native binary</td></tr>
-  <tr><td><code>"static"</code></td><td><code>b.addStaticLibrary()</code></td><td><code>.a</code> archive</td></tr>
-  <tr><td><code>"shared"</code></td><td><code>b.addSharedLibrary()</code></td><td><code>.so</code> / <code>.dylib</code> / <code>.dll</code></td></tr>
-</table>
-
-<h3><code>#Profile</code> <span class="badge">enum</span></h3>
-<p>The optimization strategy applied to a module.</p>
-<pre><code>#Profile: "debug" | "release"</code></pre>
-<table>
-  <tr><th>Value</th><th>Zig <code>OptimizeMode</code></th><th>Behavior</th></tr>
-  <tr><td><code>"debug"</code></td><td><code>.Debug</code></td><td>No optimization, safety checks on, fast compile</td></tr>
-  <tr><td><code>"release"</code></td><td><code>.ReleaseFast</code></td><td>Maximum optimization, safety checks off</td></tr>
-</table>
-
-<h3><code>#Module</code> <span class="badge">struct</span></h3>
-<p>The core type. Every build target is a <code>#Module</code>.</p>
-<pre><code>#Module: {
-    kind:     #Kind
-    root:     string
-    deps:     [...string] | *[]
-    profile:  #Profile | *"debug"
-}</code></pre>
-<p>CUE's <code>*</code> operator marks default values. If <code>deps</code> is omitted, it defaults to an empty list. If <code>profile</code> is omitted, it defaults to <code>"debug"</code>.</p>
-
-<h2>Profile Resolution</h2>
-<p>The <code>profiles</code> map translates user-facing profile names to Zig-native optimization values:</p>
-<pre><code>profiles: {
-    debug: {
-        optimize: "Debug"
-    }
-    release: {
-        optimize: "ReleaseFast"
-    }
-}</code></pre>
-<p>This indirection means you can add new profiles (e.g. <code>"small"</code> mapping to <code>ReleaseSmall</code>, or <code>"safe"</code> mapping to <code>ReleaseSafe</code>) without changing the project file format.</p>
-
-<h3>Adding a New Profile</h3>
-<ol>
-  <li>Add the value to the <code>#Profile</code> disjunction in <code>schema.cue</code></li>
-  <li>Add its optimization mapping to the <code>profiles</code> struct</li>
-  <li>Use it in <code>project.cue</code></li>
-</ol>
-<pre><code>// schema.cue
-#Profile: "debug" | "release" | "small"
-
-profiles: {
-    debug:   { optimize: "Debug" }
-    release: { optimize: "ReleaseFast" }
-    small:   { optimize: "ReleaseSmall" }
-}</code></pre>
-
-<h2>Validation Behavior</h2>
-<p>All validation happens at <code>cue vet</code> / <code>cue export</code> time — before any Zig code is generated. The schema rejects invalid configurations immediately with clear error messages.</p>
-
-<table>
-  <tr><th>Invalid Input</th><th>Error</th><th>Reason</th></tr>
-  <tr><td><code>kind: "dylib"</code></td><td>Not in <code>#Kind</code> disjunction</td><td><code>"dylib"</code> is not one of <code>"exe"</code>, <code>"static"</code>, <code>"shared"</code></td></tr>
-  <tr><td><code>profile: "turbo"</code></td><td>Not in <code>#Profile</code> disjunction</td><td><code>"turbo"</code> is not one of <code>"debug"</code>, <code>"release"</code></td></tr>
-  <tr><td><code>root: 42</code></td><td>Type mismatch</td><td>Expected <code>string</code>, got <code>int</code></td></tr>
-  <tr><td>Missing <code>kind</code></td><td>Incomplete value</td><td><code>kind</code> is required, has no default</td></tr>
-  <tr><td>Missing <code>root</code></td><td>Incomplete value</td><td><code>root</code> is required, has no default</td></tr>
-  <tr><td><code>deps: "core"</code></td><td>Type mismatch</td><td>Expected <code>[...string]</code>, got bare <code>string</code></td></tr>
-</table>
-
-<div class="callout success">
-  <strong>Type safety guarantee</strong>
-  If <code>cue vet</code> passes, the generated <code>build_spec.zig</code> is guaranteed to be valid Zig. The schema eliminates an entire class of build configuration errors.
-</div>
-
-<h2>Understanding CUE Syntax</h2>
-<p>If you're new to CUE, here are the key concepts used in the Azazel schema:</p>
-
-<h3>Definitions (<code>#</code> prefix)</h3>
-<p>Names starting with <code>#</code> are <strong>definitions</strong> — they define types but don't produce output. <code>#Module</code> is a type, not a value. You create values by unifying a definition with concrete data using <code>&amp;</code>:</p>
-<pre><code>// #Module is the type definition
-// app is a concrete value that satisfies the type
-app: #Module &amp; {
-    kind: "exe"
-    root: "src/main.zig"
-}</code></pre>
-
-<h3>Disjunctions (<code>|</code>)</h3>
-<p>The <code>|</code> operator creates a closed set of allowed values (like an enum in other languages):</p>
-<pre><code>#Kind: "exe" | "static" | "shared"</code></pre>
-<p>Any value assigned to a <code>#Kind</code> field must be exactly one of these three strings. Anything else is a validation error.</p>
-
-<h3>Defaults (<code>*</code>)</h3>
-<p>The <code>*</code> operator marks a preferred value in a disjunction:</p>
-<pre><code>profile: #Profile | *"debug"</code></pre>
-<p>This means: "profile must be a valid <code>#Profile</code>, and if not specified, defaults to <code>"debug"</code>." The default is applied during <code>cue export</code> — the user never sees incomplete values.</p>
-
-<h3>Open vs. closed lists</h3>
-<p><code>[...string]</code> means "a list of zero or more strings." The <code>...</code> makes it open-ended — any length is valid. Without <code>...</code>, CUE would require an exact-length match.</p>
-
-<h3>Unification (<code>&amp;</code>)</h3>
-<p>The <code>&amp;</code> operator merges two values, checking that they're compatible. When you write <code>#Module &amp; { kind: "exe" }</code>, CUE verifies that <code>kind: "exe"</code> satisfies the <code>#Kind</code> constraint, that <code>root</code> is still required, and that defaults for <code>deps</code> and <code>profile</code> are applied.</p>
-
-<h2>How the Export Pipeline Works</h2>
-<p><code>export.cue</code> ties everything together. Here's the full flow:</p>
-
-<pre><code>// export.cue
-_modules: {
-    "core": core    // references the 'core' value from project.cue
-    "app":  app     // references the 'app' value from project.cue
-}
-
-build: modules: {
-    for k, v in _modules {
-        (k): {
-            kind:     v.kind
-            root:     v.root
-            deps:     v.deps
-            optimize: profiles[v.profile].optimize
-        }
-    }
-}</code></pre>
-
-<p>The <code>for</code> comprehension iterates over <code>_modules</code>, and for each module, it:</p>
-<ol>
-  <li>Copies the <code>kind</code>, <code>root</code>, and <code>deps</code> fields directly</li>
-  <li>Resolves <code>profile</code> through the <code>profiles</code> lookup table to get the Zig-native <code>optimize</code> value</li>
-  <li>Produces a flat, fully-resolved struct with no remaining references or defaults</li>
-</ol>
-
-<p>The <code>_</code> prefix on <code>_modules</code> marks it as hidden — it won't appear in the exported output. Only the <code>build</code> struct is exported.</p>
-
-<h2>Complete Schema Source</h2>
-<pre><code>package build
+<pre data-lang="cue"><code class="language-cue">package build
 
 #Kind:    "exe" | "static" | "shared"
 #Profile: "debug" | "release"
+#Link:    "abi" | "import"
 
 #Module: {
-    kind:     #Kind
-    root:     string
-    deps:     [...string] | *[]
-    profile:  #Profile | *"debug"
+	kind:     #Kind
+	root:     string
+	deps: [...string] | *[]
+	profile:  #Profile | *"debug"
+	link:     #Link | *"abi"
+
+	if kind == "shared" {
+		link: "abi"
+	}
 }
 
 #Profiles: {
-    debug: {
-        optimize: "Debug"
-    }
-    release: {
-        optimize: "ReleaseFast"
-    }
+	debug: {
+		optimize: "Debug"
+	}
+	release: {
+		optimize: "ReleaseFast"
+	}
 }
 
 profiles: #Profiles</code></pre>
 
+<p>That is the whole type system. You rarely edit it. Everything below describes
+how each part behaves.</p>
+
+<h3 id="module"><code>#Module</code></h3>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td><code>kind</code></td><td><code>#Kind</code></td><td>yes</td><td>none</td></tr>
+<tr><td><code>root</code></td><td><code>string</code></td><td>yes</td><td>none</td></tr>
+<tr><td><code>deps</code></td><td><code>[...string]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>profile</code></td><td><code>#Profile</code></td><td>no</td><td><code>"debug"</code></td></tr>
+<tr><td><code>link</code></td><td><code>#Link</code></td><td>no</td><td><code>"abi"</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>#Module</code> is a CUE definition, which makes it closed. Any field not in that
+table is rejected.</p>
+
+<p>A module is declared by unifying with it:</p>
+
+<pre data-lang="cue"><code class="language-cue">name: #Module &amp; { ... }</code></pre>
+
+<p>The CUE field name becomes the module name, which becomes the artifact name.
+<code>core</code> produces <code>libcore.a</code>; <code>app</code> produces <code>app</code>.</p>
+
+<hr>
+
+<h3 id="kind"><code>kind</code></h3>
+
+<p>Required. One of <code>"exe"</code>, <code>"static"</code>, <code>"shared"</code>. Decides which
+<code>std.Build</code> call <code>build.zig</code> makes and where the artifact lands.</p>
+
+<pre data-lang="cue"><code class="language-cue">package build
+
+hello: #Module &amp; {
+	kind: "exe"
+	root: "src/main.zig"
+}</code></pre>
+
+<pre><code>$ ./gen_build_spec.sh &amp;&amp; zig build &amp;&amp; ls zig-out/bin
+Generated build_spec.zig
+hello</code></pre>
+
+<p>Change one word:</p>
+
+<pre data-lang="cue"><code class="language-cue">hello: #Module &amp; {
+	kind: "static"
+	root: "src/main.zig"
+}</code></pre>
+
+<pre><code>$ ./gen_build_spec.sh &amp;&amp; zig build &amp;&amp; ls zig-out/lib
+Generated build_spec.zig
+libhello.a</code></pre>
+
+<p>An unrecognised value is rejected before anything is generated:</p>
+
+<pre><code>$ cue export -e build
+app.kind: 3 errors in empty disjunction:
+app.kind: conflicting values "exe" and "dylib":
+    ./project.cue:4:6
+    ./project.cue:5:8
+    ./schema.cue:3:11
+    ./schema.cue:7:12
+app.kind: conflicting values "shared" and "dylib":
+    ./project.cue:4:6
+    ./project.cue:5:8
+    ./schema.cue:3:30
+    ./schema.cue:7:12
+app.kind: conflicting values "static" and "dylib":
+    ./project.cue:4:6
+    ./project.cue:5:8
+    ./schema.cue:3:19
+    ./schema.cue:7:12</code></pre>
+
+<p>One error per branch of the disjunction. The last file:line in each block is
+the schema rule; the first is your declaration.</p>
+
+<p>Omitting <code>kind</code> gives a different error, because the field has no default:</p>
+
+<pre><code>$ cue export -e build
+build.modules.app.kind: incomplete value "exe" | "static" | "shared":
+    ./export.cue:10:14</code></pre>
+
+<hr>
+
+<h3 id="root"><code>root</code></h3>
+
+<p>Required. The root source file, as a path relative to the directory holding
+<code>build.zig</code>.</p>
+
+<pre data-lang="cue"><code class="language-cue">protocol: #Module &amp; {
+	kind:    "static"
+	root:    "src/protocol.zig"
+	profile: "release"
+}</code></pre>
+
+<p>CUE checks the type and nothing else. It never touches the filesystem, so a
+path that does not exist passes validation. From <code>examples/02-lib-and-app</code>
+with <code>root</code> pointed at a file that is not there:</p>
+
+<pre><code>$ cue export -e build
+{
+    "modules": {
+        "mathlib": {
+            "kind": "static",
+            "root": "src/nope.zig",
+            "deps": [],
+            "optimize": "Debug"
+        },
+        "calc": {
+            "kind": "exe",
+            "root": "src/calc.zig",
+            "deps": [
+                "mathlib"
+            ],
+            "optimize": "ReleaseFast"
+        }
+    }
+}</code></pre>
+
+<p>The spec tests catch it, which is why they exist:</p>
+
+<pre><code>$ zig build test
+test
++- run test 4/5 passed, 1 failed
+error: 'spec_test.test.every module root exists on disk' failed: missing root for module 'mathlib': src/nope.zig</code></pre>
+
+<p>Without them you get the compiler's version:</p>
+
+<pre><code>$ zig build
+install
++- install mathlib
+   +- compile lib mathlib Debug native 1 errors
+error: failed to check cache: 'src/nope.zig' file_hash FileNotFound</code></pre>
+
+<p>A non-string is rejected outright:</p>
+
+<pre><code>$ cue export -e build
+app.root: conflicting values 42 and string (mismatched types int and string):
+    ./project.cue:4:6
+    ./project.cue:6:8
+    ./schema.cue:8:12</code></pre>
+
+<hr>
+
+<h3 id="deps"><code>deps</code></h3>
+
+<p>Optional, <code>[...string]</code>, default <code>[]</code>. Each entry is the name of another
+module. For each one, <code>build.zig</code> calls <code>linkLibrary</code>.</p>
+
+<pre data-lang="cue"><code class="language-cue">mathlib: #Module &amp; {
+	kind: "static"
+	root: "src/mathlib.zig"
+}
+
+calc: #Module &amp; {
+	kind:    "exe"
+	root:    "src/calc.zig"
+	deps:    ["mathlib"]
+	profile: "release"
+}</code></pre>
+
+<p><strong>A dependency is a link edge.</strong> It gives you no Zig import. This is the
+single thing most likely to surprise you.</p>
+
+<pre><code>$ zig build
+src/calc.zig:3:25: error: no module named 'mathlib' available within module 'root'
+const mathlib = @import("mathlib");
+                        ^~~~~~~~~</code></pre>
+
+<p>Symbols cross the boundary the way they would from a C library:</p>
+
+<pre data-lang="zig"><code class="language-zig">// src/mathlib.zig
+pub export fn mathlib_add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+// src/calc.zig
+extern fn mathlib_add(a: i32, b: i32) i32;</code></pre>
+
+<pre><code>$ ./zig-out/bin/calc
+calc built as ReleaseFast
+  add(2, 3)         = 5
+  mul(6, 7)         = 42
+  clamp(15, 0, 10)  = 10</code></pre>
+
+<p>Order does not matter. <code>build.zig</code> creates every compile step before it
+resolves any dependency, so a module may depend on one declared later in the
+file.</p>
+
+<p>Multiple dependencies and repeated dependents are both fine:</p>
+
+<pre data-lang="cue"><code class="language-cue">gateway: #Module &amp; {
+	kind:    "exe"
+	root:    "src/gateway.zig"
+	deps:    ["protocol", "codec"]
+	profile: "release"
+}</code></pre>
+
+<p>CUE checks the type but cannot check the names. <code>deps</code> is <code>[...string]</code>, and
+CUE has no view of which modules exist. A wrong name gets through validation
+and kills <code>build.zig</code> during configuration:</p>
+
+<pre><code>$ zig build
+thread 868007 panic: attempt to use null value
+/path/to/azazel/build.zig:43:44: 0x1002a0033 in build (build)
+            step.linkLibrary(built.get(dep).?);
+                                           ^</code></pre>
+
+<p>Read that panic as "a name in <code>deps</code> is not in <code>export.cue</code>'s <code>_modules</code>".
+The spec tests cannot help here, because they run after configuration.</p>
+
+<p>A wrong type is caught:</p>
+
+<pre><code>$ cue export -e build
+app.deps: 2 errors in empty disjunction:
+app.deps: conflicting values "mathlib" and [...string] (mismatched types string and list):
+    ./project.cue:4:6
+    ./project.cue:7:8
+    ./schema.cue:9:8
+app.deps: conflicting values "mathlib" and [] (mismatched types string and list):
+    ./project.cue:4:6
+    ./project.cue:7:8
+    ./schema.cue:9:23</code></pre>
+
+<p>Cycles are not rejected by CUE either. <code>build_spec_test.zig</code> runs Kahn's
+algorithm over the declared edges and fails if any module is left unresolved.</p>
+
+<hr>
+
+<h3 id="link"><code>link</code></h3>
+
+<p>Optional. One of <code>"abi"</code> or <code>"import"</code>. Default <code>"abi"</code>. It controls how a
+module is consumed by the things that depend on it.</p>
+
+<p><code>"abi"</code> is the original model. The module is compiled to its own artifact and
+linked over the C ABI. Symbols cross the edge as <code>pub export fn</code> on the
+dependency and <code>extern fn</code> on the dependent. This is what you need for a shared
+library with a stable ABI, and for linking C or C++. A <code>shared</code> module is always
+<code>abi</code>; the schema forces it.</p>
+
+<p><code>"import"</code> merges the module into each dependent as a plain Zig module. The
+dependent reaches it with <code>@import("&lt;name&gt;")</code>, the same way it would reach any
+Zig package. There is no separate artifact and no link step: the dependency
+compiles as part of whatever imports it.</p>
+
+<pre data-lang="cue"><code class="language-cue">core: #Module &amp; {
+	kind: "static"
+	root: "src/core.zig"
+	link: "import"
+}
+
+app: #Module &amp; {
+	kind: "exe"
+	root: "src/main.zig"
+	deps: ["core"]
+}</code></pre>
+
+<pre data-lang="zig"><code class="language-zig">// src/core.zig
+pub fn add(a: i32, b: i32) i32 {
+	return a + b;
+}
+
+// src/main.zig
+const core = @import("core");
+pub fn main() void {
+	_ = core.add(2, 3);
+}</code></pre>
+
+<p>The source contract differs between the two. An <code>abi</code> dependency exports C-ABI
+symbols and the dependent declares them <code>extern</code>. An <code>import</code> dependency is
+ordinary Zig (<code>pub fn</code>) and the dependent <code>@import</code>s it. Switching a module's
+<code>link</code> means writing its edge the matching way.</p>
+
+<p>Prefer <code>import</code> for pure Zig-to-Zig dependencies. It rebuilds much faster
+because the whole graph is one compilation, so Zig caches and re-links once
+instead of validating and linking one artifact per module. The gap grows with
+the module count. On a 150-module graph, a one-module change rebuilds in a few
+hundred milliseconds under <code>import</code> against several seconds under <code>abi</code>. Keep
+<code>abi</code> where the boundary is real: shared libraries, and edges that cross into C
+or C++.</p>
+
+<p>At large scale the two flat models trade places. All <code>abi</code> re-validates and
+re-links a graph of hundreds of artifacts on every build. All <code>import</code> keeps the
+graph small but turns each incremental into a recompile of the whole program, so
+its cost grows with the codebase. The answer is to combine them: group modules
+into <strong>clusters</strong>, each an <code>import</code> graph behind one <code>abi</code> module, and link the
+clusters to each other over the ABI. A change then recompiles one cluster and
+relinks, which stays flat as the project grows. On a 2000-module graph, clustered
+builds rebuild a one-module change in about two seconds and build clean in about
+ten, against roughly two minutes and ninety seconds for the all-<code>abi</code> model. See
+<a href="https://github.com/godofecht/azazel/tree/main/examples/06-clusters"><code>examples/06-clusters</code></a>.</p>
+
+<hr>
+
+<h3 id="profile"><code>profile</code></h3>
+
+<p>Optional, <code>#Profile</code>, default <code>"debug"</code>. It is a name, and <code>#Profiles</code> maps
+it to a Zig <code>OptimizeMode</code>.</p>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th><code>profile</code></th><th><code>optimize</code> in the spec</th><th>Zig</th></tr></thead>
+<tbody>
+<tr><td><code>"debug"</code></td><td><code>"Debug"</code></td><td><code>.Debug</code></td></tr>
+<tr><td><code>"release"</code></td><td><code>"ReleaseFast"</code></td><td><code>.ReleaseFast</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Per module, so one build can mix them:</p>
+
+<pre data-lang="cue"><code class="language-cue">gateway: #Module &amp; {
+	kind:    "exe"
+	root:    "src/gateway.zig"
+	deps:    ["protocol", "codec"]
+	profile: "release"
+}
+
+worker: #Module &amp; {
+	kind: "exe"
+	root: "src/worker.zig"
+	deps: ["protocol"]
+}</code></pre>
+
+<pre><code>$ ./zig-out/bin/gateway
+gateway (ReleaseFast)
+  magic       = 0xA2A2
+  frame bytes = 12
+  verify      = true
+  tampered    = false
+
+$ ./zig-out/bin/worker
+worker (Debug)
+  magic    = 0xA2A2
+  job      = resize:1920x1080
+  checksum = 574250979</code></pre>
+
+<p>An unknown profile is rejected:</p>
+
+<pre><code>$ cue export -e build
+app.profile: 2 errors in empty disjunction:
+app.profile: 3 errors in empty disjunction:
+app.profile: conflicting values "debug" and "turbo":
+    ./project.cue:4:6
+    ./project.cue:7:11
+    ./schema.cue:4:11
+    ./schema.cue:10:12
+app.profile: conflicting values "release" and "turbo":
+    ./project.cue:4:6
+    ./project.cue:7:11
+    ./schema.cue:4:21
+    ./schema.cue:10:12</code></pre>
+
+<p><code>profile</code> is the only field with an indirection. Nothing else in the schema
+goes through a lookup table, which is what makes profiles the natural place
+to extend.</p>
+
+<hr>
+
+<h3 id="kind-1"><code>#Kind</code></h3>
+
+<pre data-lang="cue"><code class="language-cue">#Kind: "exe" | "static" | "shared"</code></pre>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>Value</th><th><code>build.zig</code> call</th><th>Artifact</th><th>Installed to</th></tr></thead>
+<tbody>
+<tr><td><code>"exe"</code></td><td><code>addExecutable</code></td><td><code>name</code></td><td><code>zig-out/bin/</code></td></tr>
+<tr><td><code>"static"</code></td><td><code>addLibrary(.linkage = .static)</code></td><td><code>libname.a</code></td><td><code>zig-out/lib/</code></td></tr>
+<tr><td><code>"shared"</code></td><td><code>addLibrary(.linkage = .dynamic)</code></td><td><code>libname.dylib</code> / <code>libname.so</code></td><td><code>zig-out/lib/</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>All three in one build:</p>
+
+<pre><code>$ ls zig-out/bin zig-out/lib
+zig-out/bin:
+gateway
+worker
+
+zig-out/lib:
+libcodec.dylib
+libprotocol.a</code></pre>
+
+<p>The names follow the target. Cross-compiling the same <code>project.cue</code>:</p>
+
+<pre><code>$ zig build -Dtarget=x86_64-linux --prefix zig-out-x
+$ ls zig-out-x/bin zig-out-x/lib
+zig-out-x/bin:
+gateway
+worker
+
+zig-out-x/lib:
+libcodec.so
+libprotocol.a
+
+$ file zig-out-x/bin/gateway
+zig-out-x/bin/gateway: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, with debug_info, not stripped</code></pre>
+
+<p>Adding a fourth kind means editing <code>#Kind</code> in <code>schema.cue</code> and adding a case
+to the <code>switch</code> in <code>build.zig</code>. Everything else follows.</p>
+
+<hr>
+
+<h3 id="profile-and-profiles"><code>#Profile</code> and <code>#Profiles</code></h3>
+
+<pre data-lang="cue"><code class="language-cue">#Profile: "debug" | "release"
+
+#Profiles: {
+	debug: {
+		optimize: "Debug"
+	}
+	release: {
+		optimize: "ReleaseFast"
+	}
+}
+
+profiles: #Profiles</code></pre>
+
+<p><code>#Profile</code> is the set of names you may write. <code>#Profiles</code> maps each name to
+a <code>std.builtin.OptimizeMode</code> spelling. <code>export.cue</code> performs the lookup:</p>
+
+<pre data-lang="cue"><code class="language-cue">optimize: profiles[v.profile].optimize</code></pre>
+
+<p>The generator already understands all four Zig modes: <code>Debug</code>,
+<code>ReleaseFast</code>, <code>ReleaseSafe</code>, <code>ReleaseSmall</code>. Adding a profile takes two
+edits to <code>schema.cue</code>.</p>
+
+<p>Add the name:</p>
+
+<pre data-lang="cue"><code class="language-cue">#Profile: "debug" | "release" | "small"</code></pre>
+
+<p>Add the mapping:</p>
+
+<pre data-lang="cue"><code class="language-cue">#Profiles: {
+	debug: {
+		optimize: "Debug"
+	}
+	release: {
+		optimize: "ReleaseFast"
+	}
+	small: {
+		optimize: "ReleaseSmall"
+	}
+}</code></pre>
+
+<p>Use it:</p>
+
+<pre data-lang="cue"><code class="language-cue">hello: #Module &amp; {
+	kind:    "exe"
+	root:    "src/main.zig"
+	profile: "small"
+}</code></pre>
+
+<pre><code>$ ./gen_build_spec.sh &amp;&amp; zig build &amp;&amp; ./zig-out/bin/hello
+Generated build_spec.zig
+hello from azazel (optimize=ReleaseSmall)</code></pre>
+
+<p><code>ReleaseSafe</code> works the same way:</p>
+
+<pre><code>$ ./gen_build_spec.sh &amp;&amp; zig build &amp;&amp; ./zig-out/bin/hello
+Generated build_spec.zig
+hello from azazel (optimize=ReleaseSafe)</code></pre>
+
+<p>A mode outside those four dies in the generator, at the lookup table:</p>
+
+<pre><code>$ ./gen_build_spec.sh
+Traceback (most recent call last):
+  File "&lt;string&gt;", line 10, in &lt;module&gt;
+KeyError: 'SuperFast'
+$ echo $?
+1</code></pre>
+
+<p>That leaves a truncated <code>build_spec.zig</code> behind, since the header is written
+before the module list. Fix <code>#Profiles</code> and rerun; the file is rewritten from
+scratch each time.</p>
+
+<hr>
+
+<h3 id="exportcue"><code>export.cue</code></h3>
+
+<p><code>export.cue</code> is the second half of declaring a module, and the half people
+forget.</p>
+
+<pre data-lang="cue"><code class="language-cue">package build
+
+_modules: {
+	"core": core
+	"app":  app
+}
+
+build: modules: {
+	for k, v in _modules {
+		(k): {
+			kind:     v.kind
+			root:     v.root
+			deps:     v.deps
+			optimize: profiles[v.profile].optimize
+		}
+	}
+}</code></pre>
+
+<p><code>_modules</code> is the list of modules that get built. The comprehension below it
+projects each one into the shape the generator reads, resolving <code>profile</code> to
+<code>optimize</code> on the way.</p>
+
+<p><code>project.cue</code> describes modules. <code>export.cue</code> decides which of them exist as
+far as the build is concerned. A module in one and not the other is dropped
+with no warning:</p>
+
+<pre><code>$ cue vet
+$ echo $?
+0
+
+$ ./gen_build_spec.sh
+Generated build_spec.zig</code></pre>
+
+<pre data-lang="zig"><code class="language-zig">pub const modules = [_]Module{
+    .{
+        .name = "app",
+        .kind = .exe,
+        .root = "src/main.zig",
+        .deps = &amp;.{},
+        .optimize = .Debug,
+    },
+};</code></pre>
+
+<p>Order in <code>_modules</code> is the order in the generated array. It has no effect on
+linking.</p>
+
 <div class="page-footer">
-  <a href="project-file.html">&larr; Project File</a>
-  <a href="examples.html">Next: Examples &rarr;</a>
+  <a href="quickstart.html">&larr; Quickstart</a>
+  <a href="code-generation.html">Next: Code Generation &rarr;</a>
 </div>
 
 </main>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installation · azazel</title>
+<meta name="description" content="Prerequisites (zig, cue, python3) and what setup.sh runs.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html" class="active">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="examples.html">Examples</a>
+  <a href="troubleshooting.html">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
+  </div>
+</nav>
+<main>
+
+<h1 id="installation">Installation</h1>
+
+<h2 id="prerequisites">Prerequisites</h2>
+
+<div class="table-scroll">
+<table>
+<thead><tr><th>Tool</th><th>Version</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Zig</td><td>0.14.1 or 0.15.2</td><td>builds everything</td></tr>
+<tr><td>CUE</td><td>v0.16.0</td><td>validates and exports the config</td></tr>
+<tr><td>Python 3</td><td>any 3.x</td><td><code>gen_build_spec.sh</code> uses it to emit Zig from CUE's JSON</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Those two Zig versions are the tested ones. <code>build.zig</code> uses the
+<code>root_module</code> API, so expect older releases to fail at configuration.</p>
+
+<p>macOS:</p>
+
+<pre data-lang="sh"><code class="language-sh">brew install zig cue</code></pre>
+
+<p>Linux: get Zig from &lt;https://ziglang.org/download/&gt; and CUE from
+&lt;https://cuelang.org/docs/introduction/installation/&gt;, or
+<code>go install cuelang.org/go/cmd/cue@latest</code>.</p>
+
+<p>Python 3 ships with macOS and every mainstream Linux distribution.</p>
+
+<pre data-lang="sh"><code class="language-sh">git clone https://github.com/godofecht/azazel.git
+cd azazel
+./setup.sh</code></pre>
+
+<p><code>setup.sh</code> checks the toolchain, generates <code>build_spec.zig</code>, builds, and runs
+the tests. It is safe to run repeatedly and exits non-zero on the first
+failure.</p>
+
+<pre><code>$ ./setup.sh
+
+== Checking prerequisites
+  zig      0.15.2   (/opt/homebrew/bin/zig)
+  cue      v0.16.0   (/opt/homebrew/bin/cue)
+  python3  3.9.6   (/usr/bin/python3)
+
+== Generating build_spec.zig
+Generated build_spec.zig
+
+== Building
+
+== Testing
+
+Build Summary: 7/7 steps succeeded; 56/56 tests passed
+test success
++- run test 12 passed 1ms MaxRSS:1M
+|  +- compile test Debug native cached 40ms MaxRSS:34M
++- run test 9 passed 1ms MaxRSS:2M
+|  +- compile test Debug native cached 40ms MaxRSS:34M
++- run test 35 passed 1ms MaxRSS:1M
+   +- compile test Debug native cached 40ms MaxRSS:34M
+
+
+Done.
+
+  ./zig-out/bin/app          run the sample executable
+  $EDITOR project.cue        declare your modules
+  ./gen_build_spec.sh        regenerate after every project.cue change
+  docs/WIKI.md               full reference</code></pre>
+
+<p>Other invocations:</p>
+
+<pre data-lang="sh"><code class="language-sh">./setup.sh --check-only              report tool versions and stop
+./setup.sh --examples                also build and test everything in examples/
+ZIG=/path/to/zig ./setup.sh          use a specific Zig binary
+CUE=/path/to/cue ./setup.sh          use a specific CUE binary
+./setup.sh --help</code></pre>
+
+<p>If a tool is missing, it says so and points at an installer:</p>
+
+<pre><code>$ ZIG=/nonexistent/zig ./setup.sh --check-only
+
+== Checking prerequisites
+  zig      MISSING
+           macOS:  brew install zig
+           Linux:  https://ziglang.org/download/  (or your package manager)
+           Any:    https://github.com/marler8997/zigup
+           Already installed elsewhere? Run: ZIG=/path/to/zig ./setup.sh
+  cue      v0.16.0   (/opt/homebrew/bin/cue)
+  python3  3.9.6   (/usr/bin/python3)
+error: install the tools above, then run ./setup.sh again</code></pre>
+
+<div class="page-footer">
+  <a href="pipeline.html">&larr; The Pipeline</a>
+  <a href="quickstart.html">Next: Quickstart &rarr;</a>
+</div>
+
+</main>
+</body>
+</html>

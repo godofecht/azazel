@@ -3,83 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Code Generation — Azazel</title>
+<title>Code Generation · azazel</title>
+<meta name="description" content="How build_spec.zig maps onto build.zig: the module graph walk, link modes, and the compile steps it creates.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <nav>
   <a href="index.html" class="logo">azazel</a>
-  <div class="tagline">CUE + Zig deterministic build system</div>
-  <span class="version">v0.1.0</span>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
   <div class="section-label">Guide</div>
   <a href="index.html">Overview</a>
-  <a href="getting-started.html">Getting Started</a>
-  <a href="project-file.html">Project File</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
   <a href="schema-reference.html">Schema Reference</a>
-  <div class="section-label">Advanced</div>
-  <a href="examples.html">Examples</a>
   <a href="code-generation.html" class="active">Code Generation</a>
-  <a href="architecture.html">Architecture</a>
+  <a href="examples.html">Examples</a>
+  <a href="troubleshooting.html">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
   <div class="nav-footer">
     <a href="https://github.com/godofecht/azazel">GitHub</a>
-    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
   </div>
 </nav>
 <main>
 
-<h1>Code Generation</h1>
-<p class="page-subtitle">Azazel generates Zig source code — not JSON, not YAML, not any intermediate format. The build system never parses anything at runtime.</p>
+<h1 id="code-generation">Code Generation</h1>
 
-<h2>The Codegen Pipeline</h2>
-<p>The generation process has three distinct phases, each with a clear boundary:</p>
+<h2 id="from-build_speczig-to-buildzig">From build_spec.zig to build.zig</h2>
 
-<div class="diagram">
-<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <!-- Phase 1: CUE -->
-  <rect x="20" y="30" width="180" height="130" rx="10" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
-  <text x="110" y="25" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="10" font-weight="700">PHASE 1: VALIDATE</text>
-  <rect x="35" y="50" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
-  <text x="110" y="70" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">schema.cue</text>
-  <rect x="35" y="90" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
-  <text x="110" y="110" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">project.cue</text>
-  <rect x="35" y="130" width="150" height="25" rx="5" fill="#0f1319" stroke="#252d3a"/>
-  <text x="110" y="147" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">cue export -e build</text>
-  <!-- Phase 2: Codegen -->
-  <rect x="260" y="30" width="180" height="130" rx="10" fill="#181d27" stroke="#bc8cff" stroke-width="1.5"/>
-  <text x="350" y="25" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10" font-weight="700">PHASE 2: GENERATE</text>
-  <rect x="275" y="55" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
-  <text x="350" y="75" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">gen_build_spec.sh</text>
-  <rect x="275" y="105" width="150" height="30" rx="5" fill="#0f1319" stroke="#bc8cff" stroke-width="1"/>
-  <text x="350" y="125" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10">build_spec.zig</text>
-  <!-- Phase 3: Compile -->
-  <rect x="500" y="30" width="180" height="130" rx="10" fill="#181d27" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="590" y="25" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="700">PHASE 3: COMPILE</text>
-  <rect x="515" y="55" width="150" height="30" rx="5" fill="#0f1319" stroke="#252d3a"/>
-  <text x="590" y="75" text-anchor="middle" fill="#e6edf3" font-family="monospace" font-size="10">build.zig</text>
-  <rect x="515" y="105" width="150" height="30" rx="5" fill="#1a3a1a" stroke="#3fb950" stroke-width="1"/>
-  <text x="590" y="125" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10">zig-out/bin/*</text>
-  <!-- Arrows -->
-  <path d="M205 95 L255 95" stroke="#d29922" stroke-width="2" marker-end="url(#cgarr1)"/>
-  <path d="M445 95 L495 95" stroke="#bc8cff" stroke-width="2" marker-end="url(#cgarr2)"/>
-  <!-- Bottom labels -->
-  <text x="110" y="190" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">CUE Language</text>
-  <text x="350" y="190" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Shell + Python</text>
-  <text x="590" y="190" text-anchor="middle" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="10">Zig Compiler</text>
-  <!-- Boundary labels -->
-  <text x="110" y="210" text-anchor="middle" fill="#252d3a" font-family="Inter, sans-serif" font-size="9">Config time</text>
-  <text x="350" y="210" text-anchor="middle" fill="#252d3a" font-family="Inter, sans-serif" font-size="9">Build time</text>
-  <text x="590" y="210" text-anchor="middle" fill="#252d3a" font-family="Inter, sans-serif" font-size="9">Compile time</text>
-  <defs>
-    <marker id="cgarr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-    <marker id="cgarr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#bc8cff"/></marker>
-  </defs>
-</svg>
-</div>
+<p><code>gen_build_spec.sh</code> writes a fixed header and then one struct literal per
+module:</p>
 
-<h2>Generated Output</h2>
-<p>For a project with <code>core</code> (static, debug) and <code>app</code> (exe, release), <code>gen_build_spec.sh</code> produces:</p>
-<pre><code>const std = @import("std");
+<pre data-lang="zig"><code class="language-zig">const std = @import("std");
 
 pub const Kind = enum { exe, static, shared };
 
@@ -108,178 +67,105 @@ pub const modules = [_]Module{
     },
 };</code></pre>
 
-<p>This file is a compile-time constant array. <code>build.zig</code> imports it with <code>@import("build_spec.zig")</code> and iterates the array to create build steps. No parsing, no allocation, no error handling required.</p>
+<p>The field-by-field correspondence:</p>
 
-<h2>Why Not JSON?</h2>
-
-<div class="card-grid">
-  <div class="card">
-    <h4>Zero Runtime Cost</h4>
-    <p>No JSON parsing at build time. The module array exists as compile-time constants in the Zig binary.</p>
-  </div>
-  <div class="card">
-    <h4>Type Safety</h4>
-    <p>Zig's compiler catches type mismatches in the generated spec. A malformed codegen output fails at compile time, not runtime.</p>
-  </div>
-  <div class="card">
-    <h4>No Dependencies</h4>
-    <p>No <code>std.json</code>, no allocator, no error unions. The build script is simpler and more predictable.</p>
-  </div>
-  <div class="card">
-    <h4>Auditable</h4>
-    <p>The generated file is human-readable Zig. You can inspect exactly what will be built before running <code>zig build</code>.</p>
-  </div>
+<div class="table-scroll">
+<table>
+<thead><tr><th>Spec field</th><th>Source</th><th>Used by <code>build.zig</code> as</th></tr></thead>
+<tbody>
+<tr><td><code>.name</code></td><td>the key in <code>_modules</code></td><td>artifact name, hash-map key</td></tr>
+<tr><td><code>.kind</code></td><td><code>kind</code></td><td>the <code>switch</code> that picks <code>addExecutable</code> or <code>addLibrary</code></td></tr>
+<tr><td><code>.root</code></td><td><code>root</code></td><td><code>b.path(m.root)</code> as <code>root_source_file</code></td></tr>
+<tr><td><code>.deps</code></td><td><code>deps</code></td><td>names looked up in the hash map, then <code>linkLibrary</code></td></tr>
+<tr><td><code>.optimize</code></td><td><code>profiles[profile].optimize</code></td><td><code>.optimize</code> on the created module</td></tr>
+</tbody>
+</table>
 </div>
 
-<h2>How the Script Works</h2>
-<p><code>gen_build_spec.sh</code> is a thin pipeline:</p>
-<ol>
-  <li>Runs <code>cue export -e build</code> to produce normalized JSON (internal only — never consumed by Zig)</li>
-  <li>Pipes the JSON through a Python script that emits Zig source code</li>
-  <li>Writes the result to <code>build_spec.zig</code></li>
-</ol>
+<p><code>build.zig</code> imports it at comptime and makes two passes:</p>
 
-<div class="callout warning">
-  <strong>Important</strong>
-  JSON is used as an internal transport format between CUE and the codegen script — it never enters the Zig compilation pipeline. The Zig compiler only ever sees typed Zig source code.
-</div>
-
-<h2>Script Source Walkthrough</h2>
-<p>The complete <code>gen_build_spec.sh</code> is straightforward. Understanding it helps when debugging or extending the codegen:</p>
-
-<pre><code>#!/bin/sh
-set -e
-cd "$(dirname "$0")"
-
-# Step 1: CUE exports the normalized build data as JSON
-DATA=$(cue export -e build)
-
-# Step 2: Write the Zig type definitions (static header)
-cat &gt; build_spec.zig &lt;&lt;'HEADER'
-const std = @import("std");
-
-pub const Kind = enum { exe, static, shared };
-
-pub const Module = struct {
-    name: []const u8,
-    kind: Kind,
-    root: []const u8,
-    deps: []const []const u8,
-    optimize: std.builtin.OptimizeMode,
-};
-HEADER
-
-# Step 3: Generate the module array from CUE's JSON output
-printf 'pub const modules = [_]Module{\n' &gt;&gt; build_spec.zig
-
-echo "$DATA" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for name, m in data['modules'].items():
-    opt_map = {
-        'Debug': '.Debug',
-        'ReleaseFast': '.ReleaseFast',
-        'ReleaseSafe': '.ReleaseSafe',
-        'ReleaseSmall': '.ReleaseSmall'
-    }
-    deps = m.get('deps', [])
-    deps_str = '&amp;.{ ' + ', '.join(
-        '\"' + d + '\"' for d in deps
-    ) + ' }' if deps else '&amp;.{}'
-    print(f'''    .{{
-        .name = \"{name}\",
-        .kind = .{m['kind']},
-        .root = \"{m['root']}\",
-        .deps = {deps_str},
-        .optimize = {opt_map[m['optimize']]},
-    }},''')
-" &gt;&gt; build_spec.zig
-
-printf '};\n' &gt;&gt; build_spec.zig</code></pre>
-
-<p><strong>Key design decisions in the script:</strong></p>
-<ul>
-  <li><strong>Static header:</strong> The <code>Kind</code> enum and <code>Module</code> struct are hardcoded — they match what <code>build.zig</code> expects. If you add a new kind, you update both.</li>
-  <li><strong>Python for codegen:</strong> Python handles the JSON-to-Zig transformation because CUE doesn't have built-in Zig string templating. The Python is deliberately simple — a single comprehension loop.</li>
-  <li><strong>No error handling:</strong> The script uses <code>set -e</code> to fail fast. If CUE validation fails, the script stops before writing any Zig.</li>
-</ul>
-
-<h2>The Zig Build Engine</h2>
-<p>The generated <code>build_spec.zig</code> is consumed by <code>build.zig</code>. Here's the complete build engine:</p>
-
-<pre><code>const std = @import("std");
-const spec = @import("build_spec.zig");
+<pre data-lang="zig"><code class="language-zig">const spec = @import("build_spec.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
-    // Pass 1: Create all compile steps
-    var built = std.StringHashMap(
-        *std.Build.Step.Compile
-    ).init(b.allocator);
+    var built = std.StringHashMap(*std.Build.Step.Compile).init(b.allocator);
     defer built.deinit();
 
+    // Pass 1: one Compile step per module.
     for (spec.modules) |m| {
+        const mod = b.createModule(.{
+            .root_source_file = b.path(m.root),
+            .target = target,
+            .optimize = m.optimize,
+        });
+
         const step = switch (m.kind) {
-            .exe =&gt; b.addExecutable(.{
-                .name = m.name,
-                .root_source_file = b.path(m.root),
-                .optimize = m.optimize,
-                .target = target,
-            }),
-            .static =&gt; b.addStaticLibrary(.{
-                .name = m.name,
-                .root_source_file = b.path(m.root),
-                .optimize = m.optimize,
-                .target = target,
-            }),
-            .shared =&gt; b.addSharedLibrary(.{
-                .name = m.name,
-                .root_source_file = b.path(m.root),
-                .optimize = m.optimize,
-                .target = target,
-            }),
+            .exe =&gt; b.addExecutable(.{ .name = m.name, .root_module = mod }),
+            .static =&gt; b.addLibrary(.{ .name = m.name, .root_module = mod, .linkage = .static }),
+            .shared =&gt; b.addLibrary(.{ .name = m.name, .root_module = mod, .linkage = .dynamic }),
         };
+
         built.put(m.name, step) catch unreachable;
     }
 
-    // Pass 2: Link dependencies and install
+    // Pass 2: resolve deps by name and install.
     for (spec.modules) |m| {
         const step = built.get(m.name).?;
         for (m.deps) |dep| {
             step.linkLibrary(built.get(dep).?);
         }
-        if (m.kind == .exe) b.installArtifact(step);
+        b.installArtifact(step);
     }
 }</code></pre>
 
-<p><strong>Why two passes?</strong> A module might depend on another module that appears later in the array. Pass 1 creates all steps first, Pass 2 links them. This decouples definition order from dependency order.</p>
+<p>The example <code>build.zig</code> files differ in two small ways. They spell the link
+call <code>step.root_module.linkLibrary(...)</code>, which works on 0.14 and 0.15 and
+survives Zig 0.16 moving <code>linkLibrary</code> off <code>Compile</code>. And they give every
+executable an rpath so an installed binary can find an installed shared
+library:</p>
 
-<p><strong>Why <code>catch unreachable</code>?</strong> The hash map allocation can only fail if the allocator runs out of memory. In a Zig build script, the allocator is the build system's arena — it doesn't run out. Using <code>unreachable</code> keeps the code clean.</p>
+<pre data-lang="zig"><code class="language-zig">if (m.kind == .exe) {
+    step.root_module.addRPathSpecial(switch (target.result.os.tag) {
+        .macos, .ios, .tvos, .watchos =&gt; "@loader_path/../lib",
+        else =&gt; "$ORIGIN/../lib",
+    });
+}</code></pre>
 
-<p><strong>Why <code>.?</code> on hash map lookups?</strong> If a dependency name doesn't match any module, this produces a clear panic with the failing assertion. In practice, if CUE validated successfully, all names will resolve.</p>
+<p>Without it the only rpath Zig writes points into <code>.zig-cache</code>, relative to
+the current directory, and <code>zig-out/bin/gateway</code> runs from the project
+directory and nowhere else:</p>
 
-<h2>Regenerating</h2>
-<p>Run the script whenever you change <code>project.cue</code> or <code>export.cue</code>:</p>
-<pre><code>./gen_build_spec.sh</code></pre>
-<p><code>build_spec.zig</code> is gitignored — it is a generated build artifact, not a source file. You can safely delete it and regenerate at any time.</p>
+<pre><code>dyld[5991]: Library not loaded: @rpath/libcodec.dylib
+  Reason: tried: '.zig-cache/o/59c0702a5054dc7de34617670bdb6c38/libcodec.dylib' (no such file)</code></pre>
 
-<h2>Comparison: Azazel vs. Traditional Approaches</h2>
-<table>
-  <tr><th>Approach</th><th>Config Format</th><th>Runtime Cost</th><th>Type Safety</th><th>Ceremony</th></tr>
-  <tr><td><strong>Azazel</strong></td><td>CUE → Zig source</td><td>Zero</td><td>CUE + Zig compiler</td><td>Minimal</td></tr>
-  <tr><td>JSON config</td><td>JSON file</td><td><code>std.json</code> parsing</td><td>None until runtime</td><td>Low</td></tr>
-  <tr><td>CMake</td><td>CMakeLists.txt</td><td>CMake interpreter</td><td>None</td><td>High</td></tr>
-  <tr><td>Meson</td><td>meson.build (Python-like)</td><td>Python interpreter</td><td>Limited</td><td>Medium</td></tr>
-  <tr><td>Bazel</td><td>Starlark</td><td>Starlark interpreter</td><td>Limited</td><td>High</td></tr>
-</table>
+<p>The repo root's <code>build.zig</code> omits it because nothing there is an executable
+that links a shared library. Add it if you write one.</p>
 
-<h2>Relationship to Zaza</h2>
-<p>In the <a href="https://github.com/godofecht/zaza">Zaza</a> build system, this same codegen pattern can be extended to produce more complex build specifications — including C/C++ interop targets, WebAssembly outputs, and CMake integration modules. Azazel provides the minimal, principled core that Zaza's extended pipeline builds upon.</p>
+<p>Two passes, because pass 1 has to have created every step before pass 2 can
+look any of them up. That is what makes declaration order irrelevant.</p>
+
+<p>Three consequences worth knowing.</p>
+
+<p><strong>Everything is installed.</strong> Libraries as well as executables. Anything in
+<code>_modules</code> ends up in <code>zig-out</code>.</p>
+
+<p><strong>One target for the whole graph.</strong> <code>standardTargetOptions</code> is read once and
+applied to every module, so <code>zig build -Dtarget=x86_64-linux</code> cross-compiles
+all of it at once. There is no per-module target field.</p>
+
+<p><strong><code>built.get(dep).?</code> is unchecked.</strong> An unknown name is a panic during
+configuration, before any step runs.</p>
+
+<p>The repo's <code>build.zig</code> adds one thing beyond the above: a <code>test</code> step over
+three suites, <code>build_spec_test.zig</code>, <code>src/core_test.zig</code> and
+<code>src/danzig/tests.zig</code>. <code>build_spec_test.zig</code> asserts the invariants the
+loop depends on: unique names, <code>.zig</code> roots, roots present on disk, every
+<code>dep</code> resolvable, no self-dependency, no cycles.</p>
 
 <div class="page-footer">
-  <a href="examples.html">&larr; Examples</a>
-  <a href="architecture.html">Next: Architecture &rarr;</a>
+  <a href="schema-reference.html">&larr; Schema Reference</a>
+  <a href="examples.html">Next: Examples &rarr;</a>
 </div>
 
 </main>

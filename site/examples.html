@@ -3,552 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Examples — Azazel</title>
+<title>Examples · azazel</title>
+<meta name="description" content="Six runnable projects, from the minimum module to import mode and clusters for large projects.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <nav>
   <a href="index.html" class="logo">azazel</a>
-  <div class="tagline">CUE + Zig deterministic build system</div>
-  <span class="version">v0.1.0</span>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
   <div class="section-label">Guide</div>
   <a href="index.html">Overview</a>
-  <a href="getting-started.html">Getting Started</a>
-  <a href="project-file.html">Project File</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
   <a href="schema-reference.html">Schema Reference</a>
-  <div class="section-label">Advanced</div>
-  <a href="examples.html" class="active">Examples</a>
   <a href="code-generation.html">Code Generation</a>
-  <a href="architecture.html">Architecture</a>
+  <a href="examples.html" class="active">Examples</a>
+  <a href="troubleshooting.html">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
   <div class="nav-footer">
     <a href="https://github.com/godofecht/azazel">GitHub</a>
-    <a href="https://github.com/godofecht/zaza">Zaza Build System</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
   </div>
 </nav>
 <main>
 
-<h1>Examples</h1>
-<p class="page-subtitle">Real-world project configurations demonstrating different build topologies — from single-file binaries to deep dependency trees with mixed library types. All examples are in the <code>examples/</code> directory.</p>
+<h1 id="examples">Examples</h1>
 
-<!-- ────────────────────────────────────────────────── -->
-<h2>1. Minimal — Single Executable</h2>
-<p>The smallest valid Azazel project. One executable, no dependencies. The <code>profile</code> defaults to <code>"debug"</code> and <code>deps</code> defaults to <code>[]</code> — you don't need to specify either.</p>
+<p>Four runnable projects under <code>examples/</code>. Each is self-contained. Copy one
+somewhere else and it still builds.</p>
 
-<div class="diagram">
-<svg viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <rect x="50" y="15" width="100" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="100" y="37" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">app</text>
-  <text x="100" y="52" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · debug</text>
-</svg>
-</div>
-
-<pre><code>package build
-
-app: #Module &amp; {
-    kind: "exe"
-    root: "src/main.zig"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: { "app": app }</code></pre>
-
-<p><strong>What you get:</strong> A single binary at <code>zig-out/bin/app</code>, compiled with <code>.Debug</code> optimization (safety checks on, no optimization, fast compile).</p>
-
-<p><strong>When to use:</strong> Quick prototypes, scripts, learning projects, or any project where a single source file is the entire program.</p>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>2. Library + Executable</h2>
-<p>The default Azazel project. A static library contains shared logic, and an executable links against it. This is the most common pattern for any non-trivial Zig project.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 350 100" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <rect x="20" y="25" width="120" height="50" rx="8" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="80" y="47" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="11" font-weight="600">core</text>
-  <text x="80" y="62" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">static · debug</text>
-  <rect x="210" y="25" width="120" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="270" y="47" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">app</text>
-  <text x="270" y="62" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
-  <path d="M145 50 L205 50" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex2arr)"/>
-  <defs><marker id="ex2arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker></defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-core: #Module &amp; {
-    kind: "static"
-    root: "src/core.zig"
-}
-
-app: #Module &amp; {
-    kind:    "exe"
-    root:    "src/main.zig"
-    deps:    ["core"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: { "core": core, "app": app }</code></pre>
-
-<p><strong>What you get:</strong> <code>core</code> is compiled as a <code>.a</code> static archive with debug optimization. <code>app</code> is compiled with <code>.ReleaseFast</code> and links against <code>core</code>. Only the executable is installed to <code>zig-out/bin/</code>.</p>
-
-<p><strong>Why mixed profiles?</strong> During development, you often want your library in debug mode (for safety checks and readable stack traces) while the main executable is release-optimized (for realistic performance testing). In production, you'd set both to <code>"release"</code>.</p>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>3. Multi-Library — Shared + Static + Exe</h2>
-<p>Demonstrates mixed library types in a single project. This pattern is common when you need a dynamically-loadable library (for plugin hosts or FFI consumers) alongside statically-linked utility code.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 450 140" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <rect x="20" y="15" width="120" height="50" rx="8" fill="#181d27" stroke="#bc8cff" stroke-width="1.5"/>
-  <text x="80" y="37" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="11" font-weight="600">math</text>
-  <text x="80" y="52" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">shared · release</text>
-  <rect x="20" y="80" width="120" height="50" rx="8" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="80" y="102" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="11" font-weight="600">utils</text>
-  <text x="80" y="117" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">static · debug</text>
-  <rect x="280" y="45" width="130" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="345" y="67" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">app</text>
-  <text x="345" y="82" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
-  <path d="M145 40 L275 65" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex3arr1)"/>
-  <path d="M145 105 L275 75" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex3arr2)"/>
-  <defs>
-    <marker id="ex3arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#bc8cff"/></marker>
-    <marker id="ex3arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-  </defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-math: #Module &amp; {
-    kind:    "shared"
-    root:    "src/math.zig"
-    profile: "release"
-}
-
-utils: #Module &amp; {
-    kind: "static"
-    root: "src/utils.zig"
-}
-
-app: #Module &amp; {
-    kind:    "exe"
-    root:    "src/main.zig"
-    deps:    ["math", "utils"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: { "math": math, "utils": utils, "app": app }</code></pre>
-
-<p><strong>What you get:</strong> <code>math</code> produces a <code>.dylib</code> (macOS) / <code>.so</code> (Linux) / <code>.dll</code> (Windows). <code>utils</code> produces a <code>.a</code> archive. <code>app</code> links both — <code>math</code> dynamically, <code>utils</code> statically.</p>
-
-<p><strong>When to use:</strong> When part of your code needs to be loadable at runtime (e.g., a math kernel shared across multiple tools, or a library exposed to other languages via C ABI).</p>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>4. Microservice — Protocol + Two Services</h2>
-<p>A shared protocol library consumed by two independent service binaries. This models a real microservice architecture where multiple services share serialization logic, RPC definitions, or wire format code.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 450 140" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <rect x="20" y="45" width="130" height="50" rx="8" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
-  <text x="85" y="67" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="11" font-weight="600">protocol</text>
-  <text x="85" y="82" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">static · release</text>
-  <rect x="280" y="10" width="130" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="345" y="32" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">gateway</text>
-  <text x="345" y="47" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
-  <rect x="280" y="80" width="130" height="50" rx="8" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="345" y="102" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="11" font-weight="600">worker</text>
-  <text x="345" y="117" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="9">exe · release</text>
-  <path d="M155 60 L275 35" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex4arr1)"/>
-  <path d="M155 80 L275 100" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex4arr2)"/>
-  <defs>
-    <marker id="ex4arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-    <marker id="ex4arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-  </defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-protocol: #Module &amp; {
-    kind:    "static"
-    root:    "src/protocol.zig"
-    profile: "release"
-}
-
-gateway: #Module &amp; {
-    kind:    "exe"
-    root:    "src/gateway.zig"
-    deps:    ["protocol"]
-    profile: "release"
-}
-
-worker: #Module &amp; {
-    kind:    "exe"
-    root:    "src/worker.zig"
-    deps:    ["protocol"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: { "protocol": protocol, "gateway": gateway, "worker": worker }</code></pre>
-
-<p><strong>What you get:</strong> Two independent binaries (<code>zig-out/bin/gateway</code> and <code>zig-out/bin/worker</code>) that both link the same protocol library. Changes to <code>protocol.zig</code> are automatically reflected in both.</p>
-
-<p><strong>When to use:</strong> Microservice architectures, client/server pairs, or any project where multiple executables share common protocol, serialization, or data format code.</p>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>5. Game Engine — Deep Dependency Tree</h2>
-<p>A realistic game project with a layered architecture: low-level libraries feed into an engine core, which feeds into the game. This demonstrates how Azazel handles deep, multi-level dependency chains.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 620 200" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <!-- Layer 0: Foundation -->
-  <rect x="10" y="10" width="110" height="45" rx="7" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="65" y="30" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="600">renderer</text>
-  <text x="65" y="43" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <rect x="135" y="10" width="110" height="45" rx="7" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="190" y="30" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="600">audio</text>
-  <text x="190" y="43" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <rect x="260" y="10" width="110" height="45" rx="7" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="315" y="30" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="600">physics</text>
-  <text x="315" y="43" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <!-- Layer 1: Engine -->
-  <rect x="105" y="80" width="170" height="45" rx="7" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
-  <text x="190" y="100" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="10" font-weight="600">engine</text>
-  <text x="190" y="113" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <!-- Layer 2: Game -->
-  <rect x="130" y="150" width="120" height="45" rx="7" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="190" y="170" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="600">game</text>
-  <text x="190" y="183" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">exe · release</text>
-  <!-- Arrows: foundation → engine -->
-  <path d="M65 58 L165 77" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex5a1)"/>
-  <path d="M190 58 L190 77" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex5a2)"/>
-  <path d="M315 58 L215 77" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex5a3)"/>
-  <!-- Arrow: engine → game -->
-  <path d="M190 128 L190 147" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex5a4)"/>
-  <!-- Labels -->
-  <text x="450" y="33" fill="#58a6ff" font-family="monospace" font-size="9" font-weight="600">Foundation Layer</text>
-  <text x="450" y="48" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="9">Independent subsystems</text>
-  <text x="450" y="103" fill="#d29922" font-family="monospace" font-size="9" font-weight="600">Engine Layer</text>
-  <text x="450" y="118" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="9">Integrates all subsystems</text>
-  <text x="450" y="173" fill="#3fb950" font-family="monospace" font-size="9" font-weight="600">Application Layer</text>
-  <text x="450" y="188" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="9">Game logic + entry point</text>
-  <defs>
-    <marker id="ex5a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-    <marker id="ex5a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-    <marker id="ex5a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-    <marker id="ex5a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-  </defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-renderer: #Module &amp; {
-    kind:    "static"
-    root:    "src/renderer.zig"
-    profile: "release"
-}
-
-audio: #Module &amp; {
-    kind:    "static"
-    root:    "src/audio.zig"
-    profile: "release"
-}
-
-physics: #Module &amp; {
-    kind:    "static"
-    root:    "src/physics.zig"
-    profile: "release"
-}
-
-engine: #Module &amp; {
-    kind:    "static"
-    root:    "src/engine.zig"
-    deps:    ["renderer", "audio", "physics"]
-    profile: "release"
-}
-
-game: #Module &amp; {
-    kind:    "exe"
-    root:    "src/game.zig"
-    deps:    ["engine"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: {
-    "renderer": renderer
-    "audio":    audio
-    "physics":  physics
-    "engine":   engine
-    "game":     game
-}</code></pre>
-
-<p><strong>What you get:</strong> Five modules compiled in dependency order. <code>game</code> only declares a dependency on <code>engine</code>, but transitively links <code>renderer</code>, <code>audio</code>, and <code>physics</code> through Zig's <code>linkLibrary</code>.</p>
-
-<p><strong>Key pattern:</strong> Azazel's two-pass build engine handles arbitrarily deep dependency trees. You declare direct dependencies only — transitive resolution is automatic. The foundation libraries can be developed and tested independently.</p>
-
-<div class="callout">
-  <strong>Note</strong>
-  Dependencies in Azazel are <strong>direct</strong>, not transitive. <code>game</code> depends on <code>engine</code>, which depends on <code>renderer</code>/<code>audio</code>/<code>physics</code>. Zig's linker resolves the full chain. You don't need to list transitive deps in the <code>deps</code> array.
-</div>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>6. Plugin System — Host + Dynamic Plugins</h2>
-<p>A host application that loads shared library plugins at runtime. The plugins and host share a common interface definition compiled as a static library. This models audio plugin hosts, editor extensions, or any modular architecture.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 550 180" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <!-- Interface -->
-  <rect x="190" y="10" width="140" height="45" rx="7" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
-  <text x="260" y="30" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="10" font-weight="600">plugin_api</text>
-  <text x="260" y="43" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <!-- Host -->
-  <rect x="10" y="100" width="130" height="45" rx="7" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="75" y="120" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="600">host</text>
-  <text x="75" y="133" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">exe · release</text>
-  <!-- Plugins -->
-  <rect x="170" y="100" width="120" height="45" rx="7" fill="#181d27" stroke="#bc8cff" stroke-width="1.5"/>
-  <text x="230" y="120" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10" font-weight="600">reverb</text>
-  <text x="230" y="133" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">shared · release</text>
-  <rect x="310" y="100" width="120" height="45" rx="7" fill="#181d27" stroke="#bc8cff" stroke-width="1.5"/>
-  <text x="370" y="120" text-anchor="middle" fill="#bc8cff" font-family="monospace" font-size="10" font-weight="600">chorus</text>
-  <text x="370" y="133" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">shared · release</text>
-  <!-- Arrows -->
-  <path d="M220 58 L90 97" stroke="#d29922" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex6a1)"/>
-  <path d="M250 58 L235 97" stroke="#d29922" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex6a2)"/>
-  <path d="M280 58 L365 97" stroke="#d29922" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex6a3)"/>
-  <defs>
-    <marker id="ex6a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-    <marker id="ex6a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-    <marker id="ex6a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d29922"/></marker>
-  </defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-plugin_api: #Module &amp; {
-    kind:    "static"
-    root:    "src/plugin_api.zig"
-    profile: "release"
-}
-
-host: #Module &amp; {
-    kind:    "exe"
-    root:    "src/host.zig"
-    deps:    ["plugin_api"]
-    profile: "release"
-}
-
-reverb: #Module &amp; {
-    kind:    "shared"
-    root:    "src/plugins/reverb.zig"
-    deps:    ["plugin_api"]
-    profile: "release"
-}
-
-chorus: #Module &amp; {
-    kind:    "shared"
-    root:    "src/plugins/chorus.zig"
-    deps:    ["plugin_api"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: {
-    "plugin_api": plugin_api
-    "host":       host
-    "reverb":     reverb
-    "chorus":     chorus
-}</code></pre>
-
-<p><strong>What you get:</strong> One executable (<code>host</code>) and two shared libraries (<code>reverb.dylib</code>, <code>chorus.dylib</code>). Both the host and the plugins link against the same <code>plugin_api</code> static library, ensuring ABI compatibility. The host uses <code>std.DynLib</code> to load plugins at runtime.</p>
-
-<p><strong>Key pattern:</strong> Shared libraries for runtime-loadable modules. The static <code>plugin_api</code> defines the interface contract. Adding a new plugin is one module definition — the host doesn't need to be recompiled.</p>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>7. CLI Tool — Shared Core + Multiple Commands</h2>
-<p>A command-line tool with a shared core library and multiple sub-command executables. Each command is a separate binary that links the same core, following the BusyBox / Git multi-binary pattern.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 500 180" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <!-- Core -->
-  <rect x="170" y="10" width="130" height="45" rx="7" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="235" y="30" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="600">cli_core</text>
-  <text x="235" y="43" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <!-- Commands -->
-  <rect x="10" y="100" width="110" height="45" rx="7" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="65" y="120" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="600">init</text>
-  <text x="65" y="133" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">exe · release</text>
-  <rect x="135" y="100" width="110" height="45" rx="7" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="190" y="120" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="600">build</text>
-  <text x="190" y="133" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">exe · release</text>
-  <rect x="260" y="100" width="110" height="45" rx="7" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="315" y="120" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="600">deploy</text>
-  <text x="315" y="133" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">exe · release</text>
-  <!-- Arrows -->
-  <path d="M200 58 L75 97" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex7a1)"/>
-  <path d="M235 58 L195 97" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex7a2)"/>
-  <path d="M265 58 L310 97" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#ex7a3)"/>
-  <defs>
-    <marker id="ex7a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-    <marker id="ex7a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-    <marker id="ex7a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/></marker>
-  </defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-cli_core: #Module &amp; {
-    kind:    "static"
-    root:    "src/cli_core.zig"
-    profile: "release"
-}
-
-init: #Module &amp; {
-    kind:    "exe"
-    root:    "src/cmd/init.zig"
-    deps:    ["cli_core"]
-    profile: "release"
-}
-
-build_cmd: #Module &amp; {
-    kind:    "exe"
-    root:    "src/cmd/build.zig"
-    deps:    ["cli_core"]
-    profile: "release"
-}
-
-deploy: #Module &amp; {
-    kind:    "exe"
-    root:    "src/cmd/deploy.zig"
-    deps:    ["cli_core"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: {
-    "cli_core":  cli_core
-    "init":      init
-    "build_cmd": build_cmd
-    "deploy":    deploy
-}</code></pre>
-
-<p><strong>What you get:</strong> Three separate binaries (<code>init</code>, <code>build_cmd</code>, <code>deploy</code>) that all share argument parsing, config loading, and output formatting from <code>cli_core</code>. Each binary is small and focused.</p>
-
-<p><strong>When to use:</strong> CLI tools with distinct subcommands, dev toolchains, or any project where different entry points share infrastructure code. This pattern keeps binaries small and allows independent deployment of individual commands.</p>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>8. Layered Server — Data + Logic + API</h2>
-<p>A layered server architecture where each layer only depends on the layer below it. This enforces architectural boundaries at the build level — the API layer cannot accidentally import data layer internals.</p>
-
-<div class="diagram">
-<svg viewBox="0 0 400 220" xmlns="http://www.w3.org/2000/svg" fill="none">
-  <!-- Data layer -->
-  <rect x="110" y="10" width="160" height="45" rx="7" fill="#181d27" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="190" y="30" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="10" font-weight="600">data</text>
-  <text x="190" y="43" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <!-- Logic layer -->
-  <rect x="110" y="80" width="160" height="45" rx="7" fill="#181d27" stroke="#d29922" stroke-width="1.5"/>
-  <text x="190" y="100" text-anchor="middle" fill="#d29922" font-family="monospace" font-size="10" font-weight="600">logic</text>
-  <text x="190" y="113" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">static · release</text>
-  <!-- API layer -->
-  <rect x="110" y="150" width="160" height="45" rx="7" fill="#1a3a1a" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="190" y="170" text-anchor="middle" fill="#3fb950" font-family="monospace" font-size="10" font-weight="600">server</text>
-  <text x="190" y="183" text-anchor="middle" fill="#7d8a9a" font-family="monospace" font-size="8">exe · release</text>
-  <!-- Arrows -->
-  <path d="M190 58 L190 77" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex8a1)"/>
-  <path d="M190 128 L190 147" stroke="#d29922" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ex8a2)"/>
-  <!-- Labels -->
-  <text x="310" y="33" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="9">DB, storage, models</text>
-  <text x="310" y="103" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="9">Business rules, validation</text>
-  <text x="310" y="173" fill="#7d8a9a" font-family="Inter, sans-serif" font-size="9">HTTP handlers, routing</text>
-  <defs>
-    <marker id="ex8a1" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 5 10 L 10 0 z" fill="#58a6ff"/></marker>
-    <marker id="ex8a2" viewBox="0 0 10 10" refX="5" refY="10" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 5 10 L 10 0 z" fill="#d29922"/></marker>
-  </defs>
-</svg>
-</div>
-
-<pre><code>package build
-
-data: #Module &amp; {
-    kind:    "static"
-    root:    "src/data.zig"
-    profile: "release"
-}
-
-logic: #Module &amp; {
-    kind:    "static"
-    root:    "src/logic.zig"
-    deps:    ["data"]
-    profile: "release"
-}
-
-server: #Module &amp; {
-    kind:    "exe"
-    root:    "src/server.zig"
-    deps:    ["logic"]
-    profile: "release"
-}</code></pre>
-
-<p><strong>export.cue:</strong></p>
-<pre><code>_modules: { "data": data, "logic": logic, "server": server }</code></pre>
-
-<p><strong>What you get:</strong> A strict layered architecture enforced by the build system. <code>server</code> can only call into <code>logic</code>. <code>logic</code> can only call into <code>data</code>. If a developer tries to <code>@import</code> across layers, Zig will fail to resolve the module — the build system enforces the boundary.</p>
-
-<p><strong>Key insight:</strong> This is one of the most powerful patterns in Azazel. By expressing architectural layers as separate modules with explicit <code>deps</code>, you get compile-time enforcement of dependency rules. No linter or convention needed — it's structural.</p>
-
-<div class="callout success">
-  <strong>Architectural enforcement</strong>
-  Because each module has its own root source file and explicit dependency list, Zig's module system prevents illegal cross-layer imports at compile time. This is stronger than any linter — it's a build error, not a warning.
-</div>
-
-<!-- ────────────────────────────────────────────────── -->
-<h2>Using an Example</h2>
-
-<h3>Step-by-step</h3>
-<ol>
-  <li>Copy the example's <code>project.cue</code> content into your <code>project.cue</code></li>
-  <li>Update the <code>_modules</code> map in <code>export.cue</code> to match</li>
-  <li>Create the corresponding source files in <code>src/</code> (even empty <code>pub fn main() void {}</code> stubs work)</li>
-  <li>Validate: <code>cue vet</code></li>
-  <li>Generate: <code>./gen_build_spec.sh</code></li>
-  <li>Build: <code>zig build</code></li>
-</ol>
-
-<h3>Inspecting what will be built</h3>
-<p>Before generating, you can see exactly how CUE resolves your configuration:</p>
-<pre><code>cue export -e build</code></pre>
-<p>This outputs the fully normalized JSON with all defaults applied and all profiles resolved to their Zig optimization values.</p>
-
-<div class="callout warning">
-  <strong>Important</strong>
-  When switching between examples, always update <strong>both</strong> <code>project.cue</code> and <code>export.cue</code> together. The <code>_modules</code> map in <code>export.cue</code> must list exactly the modules you've defined — no more, no less.
-</div>
-
-<h2>Pattern Summary</h2>
+<div class="table-scroll">
 <table>
-  <tr><th>Pattern</th><th>Modules</th><th>Key Feature</th></tr>
-  <tr><td>Minimal</td><td>1 exe</td><td>Simplest possible config</td></tr>
-  <tr><td>Library + Exe</td><td>1 static + 1 exe</td><td>Most common pattern</td></tr>
-  <tr><td>Multi-Library</td><td>1 shared + 1 static + 1 exe</td><td>Mixed library types</td></tr>
-  <tr><td>Microservice</td><td>1 static + 2 exe</td><td>Shared protocol, multiple services</td></tr>
-  <tr><td>Game Engine</td><td>3 static + 1 static + 1 exe</td><td>Deep dependency tree</td></tr>
-  <tr><td>Plugin System</td><td>1 static + 1 exe + 2 shared</td><td>Runtime-loadable modules</td></tr>
-  <tr><td>CLI Tool</td><td>1 static + 3 exe</td><td>Multiple entry points</td></tr>
-  <tr><td>Layered Server</td><td>2 static + 1 exe</td><td>Architecture enforcement</td></tr>
+<thead><tr><th>Directory</th><th>Demonstrates</th></tr></thead>
+<tbody>
+<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/01-hello"><code>01-hello</code></a></td><td>The minimum module. Both defaults.</td></tr>
+<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/02-lib-and-app"><code>02-lib-and-app</code></a></td><td><code>deps</code>, <code>profile</code>, static linkage, the C-ABI boundary.</td></tr>
+<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/03-services"><code>03-services</code></a></td><td>All three kinds, a shared library, multiple deps, mixed profiles.</td></tr>
+<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/04-validation"><code>04-validation</code></a></td><td>Every rejection the schema performs, with real <code>cue</code> output.</td></tr>
+<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/05-import-mode"><code>05-import-mode</code></a></td><td><code>link: "import"</code>, a dependency merged as a Zig module instead of linked.</td></tr>
+<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/06-clusters"><code>06-clusters</code></a></td><td>Clusters: <code>import</code> graphs behind <code>abi</code> boundaries, the shape for large projects.</td></tr>
+</tbody>
 </table>
+</div>
+
+<p>Each has its own README with exact commands and their output.</p>
+
+<pre data-lang="sh"><code class="language-sh">cd examples/03-services
+./gen_build_spec.sh
+zig build
+./zig-out/bin/gateway
+zig build test --summary all</code></pre>
+
+<p>To build and test all of them at once:</p>
+
+<pre data-lang="sh"><code class="language-sh">./setup.sh --examples</code></pre>
+
+<p>The older <code>examples/*.cue</code> files (<code>minimal.cue</code>, <code>microservice.cue</code>,
+<code>multi_lib.cue</code>) are illustrative fragments. They are not runnable on their
+own.</p>
 
 <div class="page-footer">
-  <a href="schema-reference.html">&larr; Schema Reference</a>
-  <a href="code-generation.html">Next: Code Generation &rarr;</a>
+  <a href="code-generation.html">&larr; Code Generation</a>
+  <a href="troubleshooting.html">Next: Troubleshooting &rarr;</a>
 </div>
 
 </main>

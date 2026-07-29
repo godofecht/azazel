@@ -1,12 +1,12 @@
 name: Pages
 
-# Publishes the docs in site/ to GitHub Pages. site/ is committed directly, so
-# there is no build step.
+# Regenerates the docs site from docs/WIKI.md and publishes it to GitHub Pages.
 on:
   push:
     branches: [main]
     paths:
-      - "site/**"
+      - "docs/**"
+      - "scripts/build_site.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -27,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Build the site
+        run: python3 scripts/build_site.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
