@@ -20,6 +20,7 @@ Source: <https://github.com/godofecht/azazel>
   - [`kind`](#kind)
   - [`root`](#root)
   - [`deps`](#deps)
+  - [`link`](#link)
   - [`profile`](#profile)
   - [`#Kind`](#kind-1)
   - [`#Profile` and `#Profiles`](#profile-and-profiles)
@@ -318,12 +319,18 @@ package build
 
 #Kind:    "exe" | "static" | "shared"
 #Profile: "debug" | "release"
+#Link:    "abi" | "import"
 
 #Module: {
 	kind:     #Kind
 	root:     string
 	deps: [...string] | *[]
 	profile:  #Profile | *"debug"
+	link:     #Link | *"abi"
+
+	if kind == "shared" {
+		link: "abi"
+	}
 }
 
 #Profiles: {
@@ -349,6 +356,7 @@ how each part behaves.
 | `root` | `string` | yes | none |
 | `deps` | `[...string]` | no | `[]` |
 | `profile` | `#Profile` | no | `"debug"` |
+| `link` | `#Link` | no | `"abi"` |
 
 `#Module` is a CUE definition, which makes it closed. Any field not in that
 table is rejected.
@@ -600,6 +608,64 @@ app.deps: conflicting values "mathlib" and [] (mismatched types string and list)
 
 Cycles are not rejected by CUE either. `build_spec_test.zig` runs Kahn's
 algorithm over the declared edges and fails if any module is left unresolved.
+
+---
+
+### `link`
+
+Optional. One of `"abi"` or `"import"`. Default `"abi"`. It controls how a
+module is consumed by the things that depend on it.
+
+`"abi"` is the original model. The module is compiled to its own artifact and
+linked over the C ABI. Symbols cross the edge as `pub export fn` on the
+dependency and `extern fn` on the dependent. This is what you need for a shared
+library with a stable ABI, and for linking C or C++. A `shared` module is always
+`abi`; the schema forces it.
+
+`"import"` merges the module into each dependent as a plain Zig module. The
+dependent reaches it with `@import("<name>")`, the same way it would reach any
+Zig package. There is no separate artifact and no link step: the dependency
+compiles as part of whatever imports it.
+
+```cue
+core: #Module & {
+	kind: "static"
+	root: "src/core.zig"
+	link: "import"
+}
+
+app: #Module & {
+	kind: "exe"
+	root: "src/main.zig"
+	deps: ["core"]
+}
+```
+
+```zig
+// src/core.zig
+pub fn add(a: i32, b: i32) i32 {
+	return a + b;
+}
+
+// src/main.zig
+const core = @import("core");
+pub fn main() void {
+	_ = core.add(2, 3);
+}
+```
+
+The source contract differs between the two. An `abi` dependency exports C-ABI
+symbols and the dependent declares them `extern`. An `import` dependency is
+ordinary Zig (`pub fn`) and the dependent `@import`s it. Switching a module's
+`link` means writing its edge the matching way.
+
+Prefer `import` for pure Zig-to-Zig dependencies. It rebuilds much faster
+because the whole graph is one compilation, so Zig caches and re-links once
+instead of validating and linking one artifact per module. The gap grows with
+the module count. On a 150-module graph, a one-module change rebuilds in a few
+hundred milliseconds under `import` against several seconds under `abi`. Keep
+`abi` where the boundary is real: shared libraries, and edges that cross into C
+or C++.
 
 ---
 
@@ -1012,6 +1078,7 @@ somewhere else and it still builds.
 | [`02-lib-and-app`](../examples/02-lib-and-app/) | `deps`, `profile`, static linkage, the C-ABI boundary. |
 | [`03-services`](../examples/03-services/) | All three kinds, a shared library, multiple deps, mixed profiles. |
 | [`04-validation`](../examples/04-validation/) | Every rejection the schema performs, with real `cue` output. |
+| [`05-import-mode`](../examples/05-import-mode/) | `link: "import"`, a dependency merged as a Zig module instead of linked. |
 
 Each has its own README with exact commands and their output.
 

@@ -79,12 +79,20 @@ CUE generates **Zig source code**, not JSON. The build system never parses anyth
 | `root` | `string` | Yes | — | Root source file |
 | `deps` | `[...string]` | No | `[]` | Module dependencies |
 | `profile` | `"debug"` \| `"release"` | No | `"debug"` | Optimization level |
+| `link` | `"abi"` \| `"import"` | No | `"abi"` | How dependents consume this module |
 
 Two things that catch people out. Every module also has to be listed in
-`export.cue`'s `_modules` map, or it is silently not built. And `deps` is a
-linker edge, so symbols cross it as `pub export fn` / `extern fn` rather than
-as a Zig `@import`. Both are covered in
+`export.cue`'s `_modules` map, or it is silently not built. And by default `deps`
+is a linker edge, so symbols cross it as `pub export fn` / `extern fn` rather
+than as a Zig `@import`. Both are covered in
 [docs/WIKI.md](docs/WIKI.md#deps).
+
+Set `link: "import"` on a dependency to consume it as a Zig module instead. It
+merges into its dependents (`@import("name")`) as one compilation, with no
+separate artifact and no link step. That rebuilds much faster on pure
+Zig-to-Zig graphs. Keep the default `"abi"` for shared libraries and C or C++
+interop. See [`link`](docs/WIKI.md#link) and
+[`examples/05-import-mode`](examples/05-import-mode/).
 
 ## Examples
 
@@ -96,6 +104,7 @@ Four runnable projects, each self-contained with its own README.
 | [`examples/02-lib-and-app`](examples/02-lib-and-app/) | `deps`, `profile`, static linkage, the C-ABI boundary. |
 | [`examples/03-services`](examples/03-services/) | All three kinds, a shared library, multiple deps, mixed profiles. |
 | [`examples/04-validation`](examples/04-validation/) | Every rejection the schema performs, with real `cue` output. |
+| [`examples/05-import-mode`](examples/05-import-mode/) | `link: "import"`, a dependency merged as a Zig module instead of linked. |
 
 ```sh
 cd examples/03-services
