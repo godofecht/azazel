@@ -1,11 +1,8 @@
 package build
 
 _modules: {
-	"core":        core
-	"app":         app
-	"danzig":      danzig
-	"danzig_gain": danzig_gain
-	"danzig_test": danzig_test
+	"mathlib": mathlib
+	"app":     app
 }
 
 build: modules: {
