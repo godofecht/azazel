@@ -667,6 +667,17 @@ hundred milliseconds under `import` against several seconds under `abi`. Keep
 `abi` where the boundary is real: shared libraries, and edges that cross into C
 or C++.
 
+At large scale the two flat models trade places. All `abi` re-validates and
+re-links a graph of hundreds of artifacts on every build. All `import` keeps the
+graph small but turns each incremental into a recompile of the whole program, so
+its cost grows with the codebase. The answer is to combine them: group modules
+into **clusters**, each an `import` graph behind one `abi` module, and link the
+clusters to each other over the ABI. A change then recompiles one cluster and
+relinks, which stays flat as the project grows. On a 2000-module graph, clustered
+builds rebuild a one-module change in about two seconds and build clean in about
+ten, against roughly two minutes and ninety seconds for the all-`abi` model. See
+[`examples/06-clusters`](../examples/06-clusters/).
+
 ---
 
 ### `profile`
@@ -1079,6 +1090,7 @@ somewhere else and it still builds.
 | [`03-services`](../examples/03-services/) | All three kinds, a shared library, multiple deps, mixed profiles. |
 | [`04-validation`](../examples/04-validation/) | Every rejection the schema performs, with real `cue` output. |
 | [`05-import-mode`](../examples/05-import-mode/) | `link: "import"`, a dependency merged as a Zig module instead of linked. |
+| [`06-clusters`](../examples/06-clusters/) | Clusters: `import` graphs behind `abi` boundaries, the shape for large projects. |
 
 Each has its own README with exact commands and their output.
 

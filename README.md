@@ -105,6 +105,7 @@ Four runnable projects, each self-contained with its own README.
 | [`examples/03-services`](examples/03-services/) | All three kinds, a shared library, multiple deps, mixed profiles. |
 | [`examples/04-validation`](examples/04-validation/) | Every rejection the schema performs, with real `cue` output. |
 | [`examples/05-import-mode`](examples/05-import-mode/) | `link: "import"`, a dependency merged as a Zig module instead of linked. |
+| [`examples/06-clusters`](examples/06-clusters/) | Clusters: `import` graphs behind `abi` boundaries, the shape for large projects. |
 
 ```sh
 cd examples/03-services
