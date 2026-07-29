@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting · azazel</title>
+<meta name="description" content="The common failures and their fixes, with the real error text each one produces.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="examples.html">Examples</a>
+  <a href="troubleshooting.html" class="active">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
+  </div>
+</nav>
+<main>
+
+<h1 id="troubleshooting">Troubleshooting</h1>
+
+<h3 id="unable-to-load-build_speczig-filenotfound"><code>unable to load 'build_spec.zig': FileNotFound</code></h3>
+
+<pre><code>$ zig build
+build_spec.zig:1:1: error: unable to load 'build_spec.zig': FileNotFound
+build.zig:2:22: note: file imported here
+const spec = @import("build_spec.zig");
+                     ^~~~~~~~~~~~~~~~</code></pre>
+
+<p>The spec has not been generated. It is gitignored, so a fresh clone never has
+one.</p>
+
+<pre data-lang="sh"><code class="language-sh">./gen_build_spec.sh</code></pre>
+
+<h3 id="cue-command-not-found"><code>cue: command not found</code></h3>
+
+<pre><code>$ ./gen_build_spec.sh
+./gen_build_spec.sh: line 8: cue: command not found
+$ echo $?
+127</code></pre>
+
+<p>Install CUE, or run <code>./setup.sh --check-only</code> to see what is missing.
+<code>gen_build_spec.sh</code> calls <code>cue</code> by name and does not honour a <code>CUE</code>
+environment variable; <code>setup.sh</code> does, and puts it on <code>PATH</code> for the
+generator.</p>
+
+<h3 id="a-module-i-added-does-not-get-built">A module I added does not get built</h3>
+
+<p>Check <code>export.cue</code>. A module in <code>project.cue</code> that is absent from <code>_modules</code>
+is dropped silently. <code>cue vet</code> returns 0 and <code>gen_build_spec.sh</code> prints its
+usual success line.</p>
+
+<h3 id="thread-n-panic-attempt-to-use-null-value-in-buildzig"><code>thread N panic: attempt to use null value</code> in build.zig</h3>
+
+<pre><code>$ zig build
+thread 868007 panic: attempt to use null value
+/path/to/azazel/build.zig:43:44: 0x1002a0033 in build (build)
+            step.linkLibrary(built.get(dep).?);
+                                           ^</code></pre>
+
+<p>A name in some module's <code>deps</code> is not a module. Compare the <code>deps</code> lists in
+<code>project.cue</code> against the keys in <code>export.cue</code>'s <code>_modules</code>. Typos and
+modules you forgot to export both land here.</p>
+
+<h3 id="error-no-module-named-x-available-within-module-root"><code>error: no module named 'X' available within module 'root'</code></h3>
+
+<pre><code>$ zig build
+src/calc.zig:3:25: error: no module named 'mathlib' available within module 'root'
+const mathlib = @import("mathlib");
+                        ^~~~~~~~~</code></pre>
+
+<p><code>deps</code> links a library. It does not register a Zig module. Export the symbols
+you need with <code>pub export fn</code> and declare them with <code>extern fn</code> on the other
+side. See <a href="schema-reference.html#deps"><code>deps</code></a>.</p>
+
+<p>Note that Zig analyses top-level declarations lazily, so an unused
+<code>@import</code> of a non-existent module compiles fine. The error appears the first
+time you use it.</p>
+
+<h3 id="failed-to-check-cache-srcxzig-file_hash-filenotfound"><code>failed to check cache: 'src/X.zig' file_hash FileNotFound</code></h3>
+
+<p>The <code>root</code> path in <code>project.cue</code> is wrong. Paths are relative to the
+directory containing <code>build.zig</code>. <code>zig build test</code> gives the better message:</p>
+
+<pre><code>error: 'spec_test.test.every module root exists on disk' failed: missing root for module 'mathlib': src/nope.zig</code></pre>
+
+<h3 id="some-instances-are-incomplete"><code>some instances are incomplete</code></h3>
+
+<pre><code>$ cue vet
+some instances are incomplete; use the -c flag to show errors or -c=false to allow incomplete instances</code></pre>
+
+<p>A required field is unset somewhere. <code>cue vet</code> will not say which. Run
+<code>cue export -e build</code> instead, which names it:</p>
+
+<pre><code>build.modules.app.kind: incomplete value "exe" | "static" | "shared":
+    ./export.cue:10:14</code></pre>
+
+<h3 id="field-not-allowed"><code>field not allowed</code></h3>
+
+<pre><code>$ cue export -e build
+app.flags: field not allowed:
+    ./project.cue:8:2</code></pre>
+
+<p><code>#Module</code> is closed. Only <code>kind</code>, <code>root</code>, <code>deps</code> and <code>profile</code> exist. If you
+need something else, add it to <code>build.zig</code> directly.</p>
+
+<h3 id="conflicting-values-x-and-y"><code>conflicting values "X" and "Y"</code></h3>
+
+<p>An enumerated field got a value outside its disjunction. One error line per
+branch. The schema file:line at the end of each block tells you which
+disjunction it was.</p>
+
+<h3 id="dyld-library-not-loaded-rpathlibxdylib"><code>dyld: Library not loaded: @rpath/libX.dylib</code></h3>
+
+<p>An executable that links a <code>kind: "shared"</code> module cannot find it at runtime.
+Zig's only rpath points into <code>.zig-cache</code>, relative to the current directory.
+Give the executable an rpath relative to itself:</p>
+
+<pre data-lang="zig"><code class="language-zig">if (m.kind == .exe) {
+    step.root_module.addRPathSpecial(switch (target.result.os.tag) {
+        .macos, .ios, .tvos, .watchos =&gt; "@loader_path/../lib",
+        else =&gt; "$ORIGIN/../lib",
+    });
+}</code></pre>
+
+<p><code>examples/03-services/build.zig</code> does this. The repo root's <code>build.zig</code> does
+not, because it has no executable that links a shared library.</p>
+
+<h3 id="changes-to-projectcue-seem-to-have-no-effect">Changes to project.cue seem to have no effect</h3>
+
+<p><code>build_spec.zig</code> is generated on demand. Nothing watches for you. Run
+<code>./gen_build_spec.sh</code> after every edit to <code>project.cue</code>, <code>export.cue</code> or
+<code>schema.cue</code>.</p>
+
+<h3 id="a-zig-version-other-than-0141-or-0152">A Zig version other than 0.14.1 or 0.15.2</h3>
+
+<p><code>build.zig</code> uses <code>b.createModule</code> with <code>.root_module</code>, and <code>addLibrary</code> with
+an explicit <code>linkage</code>. Older releases spell both differently, so expect
+configuration errors below 0.14. <code>setup.sh</code> prints a note for anything
+outside 0.14.x and 0.15.x but does not stop you.</p>
+
+<p>Only 0.14.1 and 0.15.2 are tested.</p>
+
+<div class="page-footer">
+  <a href="examples.html">&larr; Examples</a>
+  <a href="file-reference.html">Next: File Reference &rarr;</a>
+</div>
+
+</main>
+</body>
+</html>
