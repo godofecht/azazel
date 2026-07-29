@@ -139,6 +139,14 @@ PAGES = (
     },
 )
 
+# Old page slugs that were merged or renamed. Each emits a tiny redirect stub so
+# links published before the restructure still resolve.
+REDIRECTS = {
+    "getting-started": "installation",
+    "project-file": "schema-reference",
+    "architecture": "pipeline",
+}
+
 # ------------------------------------------------------------------ stylesheet
 #
 # The first block is azazel's site/style.css, copied unchanged so the three
@@ -1176,6 +1184,20 @@ def main():
     with open(css_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(STYLE_CSS)
     written.append(css_path)
+
+    for old, new in REDIRECTS.items():
+        stub = (
+            '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+            '<meta http-equiv="refresh" content="0; url=%s.html">\n'
+            '<link rel="canonical" href="https://godofecht.github.io/%s/%s.html">\n'
+            '<title>Moved</title>\n</head>\n<body>\n'
+            'This page moved to <a href="%s.html">%s.html</a>.\n</body>\n</html>\n'
+            % (new, REPO_NAME, new, new, new)
+        )
+        rpath = os.path.join(out_dir, old + ".html")
+        with open(rpath, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(stub)
+        written.append(rpath)
 
     for path in written:
         print("wrote %s" % os.path.relpath(path, root))
