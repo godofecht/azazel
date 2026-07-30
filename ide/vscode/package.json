@@ -1,0 +1,77 @@
+{
+  "name": "azazel",
+  "displayName": "Azazel",
+  "description": "Authoring support for azazel project.cue build files: syntax, inline cue diagnostics, and build_spec generation.",
+  "version": "0.1.0",
+  "publisher": "godofecht",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/godofecht/azazel.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:cue",
+    "workspaceContains:**/project.cue",
+    "workspaceContains:**/schema.cue"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "cue",
+        "aliases": [
+          "CUE",
+          "cue"
+        ],
+        "extensions": [
+          ".cue"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cue",
+        "scopeName": "source.cue",
+        "path": "./syntaxes/cue.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "azazel.generateBuildSpec",
+        "title": "Azazel: Generate build_spec"
+      },
+      {
+        "command": "azazel.validate",
+        "title": "Azazel: Validate project.cue"
+      }
+    ],
+    "configuration": {
+      "title": "Azazel",
+      "properties": {
+        "azazel.cuePath": {
+          "type": "string",
+          "default": "cue",
+          "description": "Path to the cue binary used for validation."
+        },
+        "azazel.validateOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run cue and show inline diagnostics on open and on save."
+        },
+        "azazel.genScript": {
+          "type": "string",
+          "default": "gen_build_spec.sh",
+          "description": "Name of the generator script invoked by 'Azazel: Generate build_spec'."
+        }
+      }
+    }
+  }
+}
