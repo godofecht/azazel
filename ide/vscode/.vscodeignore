@@ -1,0 +1,6 @@
+.vscode/**
+.gitignore
+**/*.map
+test/**
+../server/**
+../DESIGN.md
