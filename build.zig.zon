@@ -7,6 +7,8 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "build_spec_test.zig",
+        "compat.zig",
         "schema.cue",
         "project.cue",
         "export.cue",
