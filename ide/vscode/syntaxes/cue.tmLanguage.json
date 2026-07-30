@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CUE",
+  "scopeName": "source.cue",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#package" },
+    { "include": "#definitions" },
+    { "include": "#azazel-fields" },
+    { "include": "#azazel-enums" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#field-key" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.cue",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.cue",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "package": {
+      "match": "^\\s*(package|import)\\b\\s+([A-Za-z_][A-Za-z0-9_]*)?",
+      "captures": {
+        "1": { "name": "keyword.control.import.cue" },
+        "2": { "name": "entity.name.namespace.cue" }
+      }
+    },
+    "definitions": {
+      "name": "entity.name.type.definition.cue",
+      "match": "#[A-Za-z_][A-Za-z0-9_]*"
+    },
+    "azazel-fields": {
+      "match": "\\b(kind|root|deps|profile|link|optimize)\\s*:",
+      "captures": {
+        "1": { "name": "support.type.property-name.azazel" }
+      }
+    },
+    "azazel-enums": {
+      "name": "support.constant.azazel",
+      "match": "\"(exe|static|shared|abi|import|debug|release)\""
+    },
+    "keywords": {
+      "name": "keyword.control.cue",
+      "match": "\\b(for|in|if|let|div|mod|quo|rem)\\b"
+    },
+    "constants": {
+      "name": "constant.language.cue",
+      "match": "\\b(true|false|null)\\b"
+    },
+    "strings": {
+      "name": "string.quoted.double.cue",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.cue",
+          "match": "\\\\."
+        },
+        {
+          "name": "meta.interpolation.cue",
+          "begin": "\\\\\\(",
+          "end": "\\)",
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.cue",
+      "match": "\\b([0-9][0-9_]*(\\.[0-9_]+)?([eE][+-]?[0-9]+)?)\\b"
+    },
+    "field-key": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*:",
+      "captures": {
+        "1": { "name": "variable.other.property.cue" }
+      }
+    }
+  }
+}
