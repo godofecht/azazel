@@ -94,6 +94,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all tests");
 
     const suites = [_][]const u8{
+        "compat.zig",
         "build_spec_test.zig",
         "src/core_test.zig",
         "src/danzig/tests.zig",

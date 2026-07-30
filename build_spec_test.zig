@@ -9,6 +9,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const spec = @import("build_spec.zig");
+const compat = @import("compat.zig");
 
 // --- shape -----------------------------------------------------------------
 
@@ -97,16 +98,9 @@ test "dependency graph is acyclic" {
 
 // --- source files on disk --------------------------------------------------
 
-/// Zig 0.16 moved the filesystem under std.Io and threads an Io handle through
-/// every call, so std.fs.cwd no longer exists. Both branches are valid Zig, and
-/// only the taken one is analysed because the condition is comptime known.
+/// The 0.14/0.15/0.16 filesystem divergence lives in the compat adaptor.
 fn rootExists(path: []const u8) bool {
-    if (comptime @hasDecl(std.fs, "cwd")) {
-        std.fs.cwd().access(path, .{}) catch return false;
-    } else {
-        std.Io.Dir.cwd().access(testing.io, path, .{}) catch return false;
-    }
-    return true;
+    return compat.exists(compat.io(), path);
 }
 
 test "every module root exists on disk" {
