@@ -129,6 +129,18 @@ regenerated from [docs/WIKI.md](docs/WIKI.md) on every change.
 - [Examples](https://godofecht.github.io/azazel/examples.html)
 - [Troubleshooting](https://godofecht.github.io/azazel/troubleshooting.html)
 
+## Install
+
+Azazel ships a `build.zig.zon`, so it is fetchable with the Zig package manager:
+
+```sh
+zig fetch --save git+https://github.com/godofecht/azazel
+```
+
+Most projects use it as a starting point rather than a linked dependency: copy a
+directory from `examples/` (or the repo root) and edit `project.cue`. Requires
+Zig 0.14.1, 0.15.2, or 0.16.0.
+
 ## Part of the Zaza Ecosystem
 
 Azazel is the declarative configuration frontend for [Zaza](https://github.com/godofecht/zaza), a Zig-driven build system for C, C++, Zig, CMake-interop, and WebAssembly. Azazel can also be used standalone with any Zig project.
