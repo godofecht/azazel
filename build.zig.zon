@@ -1,0 +1,21 @@
+.{
+    .name = .azazel,
+    .version = "0.1.0",
+    .fingerprint = 0x477a4a43d227d3f6, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "schema.cue",
+        "project.cue",
+        "export.cue",
+        "gen_build_spec.sh",
+        "setup.sh",
+        "src",
+        "examples",
+        "docs",
+        "README.md",
+        "LICENSE",
+    },
+}
