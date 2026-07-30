@@ -129,6 +129,17 @@ regenerated from [docs/WIKI.md](docs/WIKI.md) on every change.
 - [Examples](https://godofecht.github.io/azazel/examples.html)
 - [Troubleshooting](https://godofecht.github.io/azazel/troubleshooting.html)
 
+## Editor support
+
+[`ide/`](ide/) has a VS Code extension for authoring `project.cue`: syntax
+highlighting for the `#Module` fields, and inline diagnostics that run
+`cue export -e build` on save and surface schema errors where you typed them. It
+also adds an "Azazel: Generate build_spec" command. Open `ide/vscode` in VS Code
+and press F5 to try it; see [`ide/vscode/README.md`](ide/vscode/README.md).
+
+A language server design and a dependency-free stdio prototype live in
+[`ide/DESIGN.md`](ide/DESIGN.md) and [`ide/server`](ide/server/).
+
 ## Install
 
 Azazel ships a `build.zig.zon`, so it is fetchable with the Zig package manager:
