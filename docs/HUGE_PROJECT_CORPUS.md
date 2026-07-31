@@ -24,9 +24,9 @@ tools/huge_corpus.py --audit
 | --- | --- | --- | --- |
 | `zigtools/zls` | Language server with generated version data, tests, coverage, release signing, package deps | `zig build --help` fails: ZON import needs newer Zig result typing | Zig version constraints, generated run artifacts, package deps, build options, release-only post commands |
 | `mitchellh/libxev` | Cross-platform event-loop library with static/dynamic libs, examples, benches, manpage generation | `zig build --help` fails: build script expects `b.graph.io` | Library variants, conditional examples, manpage generators, platform system libs |
-| `riverwm/river` | Wayland compositor with pkg-config/system deps and generated translation modules | Dependency resolution fails fetching Codeberg `translate-c` | External dependency diagnostics, pkg-config system libraries, C sources, generated translate-C modules |
+| `riverwm/river` | Wayland compositor with pkg-config/system deps and generated translation modules | `zig build --help` fails: ZON import needs newer Zig result typing | External dependency diagnostics, pkg-config system libraries, C sources, generated translate-C modules |
 | `hexops/mach` | Game engine with modules, examples, editor project, generated Vulkan bindings, native backends | Fails on required custom Mach Zig version and newer FS API | Custom Zig toolchain constraints, assets, backend options, generated sources, helper build APIs |
-| `ZigEmbeddedGroup/microzig` | Embedded workspace with many nested `build.zig` and `.zon` packages | Dependency resolution fails through Codeberg `translate-c` from `libxml2` | Workspace/package graph, embedded targets, tools, board ports, nested build packages |
+| `ZigEmbeddedGroup/microzig` | Embedded workspace with many nested `build.zig` and `.zon` packages | Fails on newer Zig language syntax: `@Struct` and inline asm clobber syntax | Workspace/package graph, embedded targets, tools, board ports, nested build packages |
 | `rockorager/libvaxis` | TUI library with many examples and test/install steps | `zig build --help` fails on Zig 0.14 format/build API incompatibility | Example matrix, installable demos, tests, host Zig compatibility diagnostics |
 | `capy-ui/capy` | Native UI toolkit with custom build helper | Fails fast: requires Zig 0.14.1 exactly | Minimum/exact Zig version constraints, platform UI backends, custom helper build layer |
 | `zig-gamedev/zig-gamedev` | Large game-dev monorepo with assets and package deps | Clone required heavy filtering; build help fails in deps (`zphysics`, `ztracy`) on Zig 0.14 | Large asset graphs, dependency API drift, package-level diagnostics, optional example selection |
@@ -59,9 +59,9 @@ baseline audit.
 | --- | --- |
 | `zls` | fails before build graph execution: `@import` of ZON needs a known result type |
 | `libxev` | fails before build graph execution: build script expects `b.graph.io` |
-| `river` | dependency resolution fails fetching Codeberg `translate-c` |
+| `river` | fails before build graph execution: `@import` of ZON needs a known result type |
 | `mach` | fails on newer filesystem API and explicit custom Mach Zig requirement |
-| `microzig` | dependency resolution fails fetching Codeberg `translate-c` through `libxml2` |
+| `microzig` | fails on newer Zig language syntax (`@Struct`, inline asm clobber syntax) |
 | `libvaxis` | fails on host Zig format/build API drift |
 | `capy` | fails fast: exact Zig 0.14.1 required |
 | `zig-gamedev` | dependency build scripts fail on Zig API drift (`lto`, `std.fmt.printInt`) |

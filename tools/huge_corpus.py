@@ -157,13 +157,19 @@ def audit(root: Path) -> None:
 def classify_failure(output: str, returncode: int) -> str:
     if returncode == 0:
         return "ok"
-    if "unsupported Zig version" in output or "minimum_zig_version" in output:
+    if (
+        "unsupported Zig version" in output
+        or "minimum_zig_version" in output
+        or "@import' of ZON" in output
+        or "invalid builtin function: '@Struct'" in output
+        or "expected ')', found '.'" in output
+    ):
         return "zig-toolchain"
     if "unable to discover remote git server capabilities" in output or "Could not resolve host" in output:
         return "dependency-fetch"
     if "no field named" in output or "member function expected" in output or "has no member named" in output:
         return "zig-api-drift"
-    if "invalid format string" in output or "@import' of ZON" in output:
+    if "invalid format string" in output:
         return "zig-api-drift"
     return "unknown"
 
