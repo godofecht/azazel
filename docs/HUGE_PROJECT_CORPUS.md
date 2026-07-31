@@ -10,12 +10,13 @@ Environment for the first pass:
 - Clone root: `/tmp/azazel-huge`
 
 Forks live under `godofecht/*`; integration branches use
-`azazel-zaza-integration`. Use `tools/huge_corpus.py` to prepare or audit the
-corpus:
+`azazel-zaza-integration`. Use `tools/huge_corpus.py` to prepare, audit, or
+produce parity-readiness reports for the corpus:
 
 ```sh
 tools/huge_corpus.py --prepare --push
 tools/huge_corpus.py --audit
+tools/huge_corpus.py --parity
 tools/huge_corpus.py --audit --repo zls --repo microzig
 ```
 
@@ -48,9 +49,33 @@ Prepared and pushed on the forks:
 | `godofecht/zig-gamedev` | `azazel-zaza-integration` |
 
 Each branch has a `.azazel/` scaffold with repo metadata, a starting
-`project.cue`, and integration notes. The scaffold intentionally leaves upstream
-source untouched; full parity work proceeds feature by feature against the
-baseline audit.
+`project.cue`, integration notes, and `.azazel/parity.json`. The parity manifest
+records the preferred Zig lane, baseline command, expected baseline failure
+classification, first Azazel target slice, and required system dependencies.
+The scaffold intentionally leaves upstream source untouched; full parity work
+proceeds feature by feature against the baseline audit.
+
+## Parity Reports
+
+Run:
+
+```sh
+tools/huge_corpus.py --parity
+tools/huge_corpus.py --parity --repo zls --repo libxev
+```
+
+The runner writes `parity-results.json` in the clone root. Each entry records:
+
+- the exact baseline command and return code
+- the observed baseline classification
+- whether the observed classification matches the repo manifest
+- Azazel's declared parity command and current status
+- first target slices to implement before claiming full-project parity
+
+The current manifests mark Azazel status as `scaffold-only`. That is deliberate:
+the reports are allowed to prove that the corpus is blocked by toolchain/API
+gaps, but they must not claim replacement parity until Azazel can actually
+translate and run the declared target slice.
 
 ## Current Audit Results
 
@@ -84,11 +109,11 @@ baseline audit.
 - Post-build commands need to compose with generated artifacts and installed artifacts across CMake and Zig branches.
 - System-command enablement should produce precise errors naming the target and command that was skipped.
 - C/C++ integration needs parity with Zig build metadata: include paths, link libraries, frameworks, and per-config commands.
-- Large repo support needs corpus parity runs that can select targets inside a repo instead of building every example/tool by default.
+- Large repo support now has per-repo parity manifests; the next step is to turn scaffold-only target slices into executable Azazel commands one repo at a time.
 
 ## Next Targets
 
 1. Add enum/list build options.
 2. Add package dependency declarations/hashes and dependency-fetch diagnostics.
 3. Add generated-file/run-artifact output tracking.
-4. Expand the corpus runner from scaffold/audit to full baseline-vs-Azazel parity runs.
+4. Convert the first `scaffold-only` parity target slice into a real executable Azazel parity command.
