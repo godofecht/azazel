@@ -11,6 +11,7 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
+  <span class="version">v0.1.0</span>
   <div class="section-label">Guide</div>
   <a href="index.html">Overview</a>
   <a href="pipeline.html">The Pipeline</a>
@@ -20,6 +21,8 @@
   <a href="schema-reference.html" class="active">Schema Reference</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="examples.html">Examples</a>
+  <a href="editor-support.html">Editor Support</a>
+  <a href="huge-project-corpus.html">Huge Corpus</a>
   <a href="troubleshooting.html">Troubleshooting</a>
   <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
@@ -37,9 +40,14 @@
 
 <pre data-lang="cue"><code class="language-cue">package build
 
-#Kind:    "exe" | "static" | "shared"
+#Kind:    "exe" | "static" | "shared" | "module"
 #Profile: "debug" | "release"
 #Link:    "abi" | "import"
+#ZigLane: "0.14" | "0.15" | "0.16"
+
+#Command: {
+	argv: [...string]
+}
 
 #Module: {
 	kind:     #Kind
@@ -47,9 +55,14 @@
 	deps: [...string] | *[]
 	profile:  #Profile | *"debug"
 	link:     #Link | *"abi"
+	post: [...#Command] | *[]
 
 	if kind == "shared" {
 		link: "abi"
+	}
+
+	if kind == "module" {
+		link: "import"
 	}
 }
 
@@ -62,7 +75,16 @@
 	}
 }
 
-profiles: #Profiles</code></pre>
+profiles: #Profiles
+
+#Toolchain: {
+	zig: {
+		lanes: [...#ZigLane] | *["0.14", "0.15", "0.16"]
+		preferred: #ZigLane | *"0.15"
+	}
+}
+
+toolchain: #Toolchain | *{}</code></pre>
 
 <p>That is the whole type system. You rarely edit it. Everything below describes
 how each part behaves.</p>
@@ -78,6 +100,12 @@ how each part behaves.</p>
 <tr><td><code>deps</code></td><td><code>[...string]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>profile</code></td><td><code>#Profile</code></td><td>no</td><td><code>"debug"</code></td></tr>
 <tr><td><code>link</code></td><td><code>#Link</code></td><td>no</td><td><code>"abi"</code></td></tr>
+<tr><td><code>pre</code></td><td><code>[...#Command]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>post</code></td><td><code>[...#Command]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>pkg_imports</code></td><td><code>[...#PackageImport]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>build_options</code></td><td><code>[...string]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>build_options_import</code></td><td><code>string</code></td><td>no</td><td><code>"build-options"</code></td></tr>
+<tr><td><code>native</code></td><td><code>#Native</code></td><td>no</td><td><code>{}</code></td></tr>
 </tbody>
 </table>
 </div>
@@ -94,9 +122,108 @@ table is rejected.</p>
 
 <hr>
 
+<h3 id="toolchain"><code>toolchain</code></h3>
+
+<p>Optional top-level project contract for the Zig lanes the generated spec
+supports:</p>
+
+<pre data-lang="cue"><code class="language-cue">toolchain: zig: {
+	lanes: ["0.14", "0.15", "0.16"]
+	preferred: "0.15"
+}</code></pre>
+
+<p>Use this when a project or generated <code>build.zig</code> intentionally supports only a
+subset of Zig's moving <code>std.Build</code> API. The generated spec embeds the lanes, and
+<code>build.zig</code> fails early if the current compiler is outside that list.</p>
+
+<hr>
+
+<h3 id="pkg_imports"><code>pkg_imports</code></h3>
+
+<p>Top-level <code>packages</code> mirrors package dependency intent for diagnostics and
+corpus reporting:</p>
+
+<pre data-lang="cue"><code class="language-cue">packages: known_folders: {
+	url: "https://example.invalid/known-folders.tar.gz"
+	hash: "..."
+	lazy: false
+}</code></pre>
+
+<p>Imports modules from <code>build.zig.zon</code> package dependencies:</p>
+
+<pre data-lang="cue"><code class="language-cue">app: #Module &amp; {
+	kind: "exe"
+	root: "src/main.zig"
+	pkg_imports: [{
+		alias: "known-folders"
+		package: "known_folders"
+		module: "known-folders"
+	}]
+}</code></pre>
+
+<p>This maps to <code>b.dependency(package, .{ .target = target, .optimize = optimize })</code>
+followed by <code>root_module.addImport(alias, dep.module(module))</code>.</p>
+
+<hr>
+
+<h3 id="build_options"><code>build_options</code></h3>
+
+<p>Top-level <code>options</code> declare typed <code>b.option</code> values. A module lists the option
+names it wants exposed through a generated options import:</p>
+
+<pre data-lang="cue"><code class="language-cue">options: [{
+	name: "enable_tracy"
+	type: "bool"
+	description: "Enable Tracy instrumentation"
+	default: false
+}]
+
+app: #Module &amp; {
+	kind: "exe"
+	root: "src/main.zig"
+	build_options: ["enable_tracy"]
+	build_options_import: "build-options"
+}</code></pre>
+
+<p>Supported option types are <code>bool</code>, <code>string</code>, and <code>u32</code>.</p>
+
+<hr>
+
+<h3 id="pre-and-post"><code>pre</code> and <code>post</code></h3>
+
+<p><code>pre</code> commands run before the module artifact compiles. Use them for simple
+code-generation or stamping steps that do not yet need output-file tracking.
+<code>post</code> commands run after the artifact install step and are suited to copy,
+sign, or package commands.</p>
+
+<pre data-lang="cue"><code class="language-cue">pre: [{ argv: ["zig", "run", "tools/gen.zig"] }]
+post: [{ argv: ["cp", "zig-out/bin/app", "dist/app"] }]</code></pre>
+
+<hr>
+
+<h3 id="native"><code>native</code></h3>
+
+<p>Native metadata covers C sources and platform link inputs:</p>
+
+<pre data-lang="cue"><code class="language-cue">native: {
+	c_sources: ["src/native.c"]
+	include_dirs: ["include"]
+	system_libs: ["sqlite3"]
+	pkg_config_libs: ["libinput"]
+	frameworks: ["CoreFoundation"]
+	link_libc: true
+}</code></pre>
+
+<p>It maps onto <code>std.Build.Module</code> APIs such as <code>addCSourceFile</code>,
+<code>addIncludePath</code>, <code>linkSystemLibrary</code>, <code>linkFramework</code>, <code>link_libc</code>, and
+<code>link_libcpp</code>. <code>pkg_config_libs</code> uses <code>linkSystemLibrary</code> with forced
+pkg-config resolution.</p>
+
+<hr>
+
 <h3 id="kind"><code>kind</code></h3>
 
-<p>Required. One of <code>"exe"</code>, <code>"static"</code>, <code>"shared"</code>. Decides which
+<p>Required. One of <code>"exe"</code>, <code>"static"</code>, <code>"shared"</code>, <code>"module"</code>. Decides which
 <code>std.Build</code> call <code>build.zig</code> makes and where the artifact lands.</p>
 
 <pre data-lang="cue"><code class="language-cue">package build
