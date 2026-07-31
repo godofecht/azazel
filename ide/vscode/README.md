@@ -97,9 +97,23 @@ ide/vscode/
   extension.js                activation, diagnostics, features, commands
   cueDiagnostics.js           runs cue, parses its errors (shared with the LSP)
   features.js                 completion, hover, definition, graph diagnostics
+  features.test.js            unit tests for the feature layer (node --test)
   schemaModel.js              reads #Module fields and enum values from schema.cue
   symbolIndex.js              scans project.cue and export.cue
   language-configuration.json comments, brackets, auto-closing
   syntaxes/cue.tmLanguage.json  the CUE + azazel grammar
   .vscodeignore
 ```
+
+## Tests
+
+The feature layer has a dependency-free unit suite. From `ide/vscode`:
+
+```sh
+node --test
+```
+
+It reads the real `examples/03-services` package for schema, project, and export
+fixtures, then pins completion, hover, definition, and the two graph cross-checks.
+The LSP server's `../server/test-client.js` covers the same behavior end to end
+over stdio.
