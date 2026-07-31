@@ -16,6 +16,7 @@ corpus:
 ```sh
 tools/huge_corpus.py --prepare --push
 tools/huge_corpus.py --audit
+tools/huge_corpus.py --audit --repo zls --repo microzig
 ```
 
 ## Baseline Audit
@@ -83,7 +84,7 @@ baseline audit.
 - Post-build commands need to compose with generated artifacts and installed artifacts across CMake and Zig branches.
 - System-command enablement should produce precise errors naming the target and command that was skipped.
 - C/C++ integration needs parity with Zig build metadata: include paths, link libraries, frameworks, and per-config commands.
-- Large repo support needs a corpus runner that can select subsets instead of building every example/tool by default.
+- Large repo support needs corpus parity runs that can select targets inside a repo instead of building every example/tool by default.
 
 ## Next Targets
 

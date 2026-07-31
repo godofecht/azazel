@@ -122,8 +122,21 @@ toolchain: zig: {
     )
 
 
-def prepare(root: Path, push: bool) -> None:
-    for repo in REPOS:
+def select_repos(names: list[str]) -> list[Repo]:
+    if not names:
+        return REPOS
+    wanted = set(names)
+    selected = [repo for repo in REPOS if repo.name in wanted or repo.upstream in wanted or repo.fork in wanted]
+    found = {repo.name for repo in selected} | {repo.upstream for repo in selected} | {repo.fork for repo in selected}
+    missing = sorted(wanted - found)
+    if missing:
+        known = ", ".join(repo.name for repo in REPOS)
+        raise SystemExit(f"unknown repo(s): {', '.join(missing)}\nknown repos: {known}")
+    return selected
+
+
+def prepare(root: Path, repos: list[Repo], push: bool) -> None:
+    for repo in repos:
         path = ensure_clone(root, repo)
         checkout_branch(path)
         write_overlay(path, repo)
@@ -136,9 +149,9 @@ def prepare(root: Path, push: bool) -> None:
         print(f"{repo.name}: prepared")
 
 
-def audit(root: Path) -> None:
+def audit(root: Path, repos: list[Repo]) -> None:
     report = []
-    for repo in REPOS:
+    for repo in repos:
         path = ensure_clone(root, repo)
         result = run(["zig", "build", "--help"], cwd=path, check=False)
         output = result.stdout[-4000:]
@@ -180,15 +193,22 @@ def main() -> None:
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--audit", action="store_true")
     parser.add_argument("--push", action="store_true")
+    parser.add_argument(
+        "--repo",
+        action="append",
+        default=[],
+        help="limit prepare/audit to a repo name, upstream owner/name, or fork owner/name; repeatable",
+    )
     args = parser.parse_args()
 
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
+    repos = select_repos(args.repo)
 
     if args.prepare:
-        prepare(root, args.push)
+        prepare(root, repos, args.push)
     if args.audit:
-        audit(root)
+        audit(root, repos)
     if not args.prepare and not args.audit:
         parser.error("choose --prepare and/or --audit")
 
