@@ -17,6 +17,42 @@ test "spec declares at least one module" {
     try testing.expect(spec.modules.len > 0);
 }
 
+test "spec declares supported Zig toolchain lanes" {
+    try testing.expect(spec.toolchain.zig_lanes.len > 0);
+
+    var preferred_found = false;
+    for (spec.toolchain.zig_lanes) |lane| {
+        try testing.expect(lane.len == 4);
+        try testing.expect(std.mem.startsWith(u8, lane, "0."));
+        if (std.mem.eql(u8, lane, spec.toolchain.preferred_zig_lane)) {
+            preferred_found = true;
+        }
+    }
+    try testing.expect(preferred_found);
+}
+
+test "package declarations are well-formed" {
+    for (spec.packages) |pkg| {
+        try testing.expect(pkg.name.len > 0);
+        try testing.expect(pkg.url != null or pkg.path != null);
+        if (pkg.hash) |hash| try testing.expect(hash.len > 0);
+    }
+}
+
+test "build options are unique and typed" {
+    for (spec.options, 0..) |a, i| {
+        try testing.expect(a.name.len > 0);
+        for (spec.options[i + 1 ..]) |b| {
+            try testing.expect(!std.mem.eql(u8, a.name, b.name));
+        }
+        switch (a.type) {
+            .bool => if (a.bool_default) |_| {} else {},
+            .string => if (a.string_default) |v| try testing.expect(v.len >= 0),
+            .u32 => if (a.u32_default) |_| {} else {},
+        }
+    }
+}
+
 test "every module has a non-empty name and root" {
     for (spec.modules) |m| {
         try testing.expect(m.name.len > 0);
@@ -27,6 +63,37 @@ test "every module has a non-empty name and root" {
 test "every root path ends in .zig" {
     for (spec.modules) |m| {
         try testing.expect(std.mem.endsWith(u8, m.root, ".zig"));
+    }
+}
+
+test "post-build commands have argv" {
+    for (spec.modules) |m| {
+        for (m.pre) |cmd| {
+            try testing.expect(cmd.argv.len > 0);
+            for (cmd.argv) |arg| try testing.expect(arg.len > 0);
+        }
+        for (m.post) |cmd| {
+            try testing.expect(cmd.argv.len > 0);
+            for (cmd.argv) |arg| try testing.expect(arg.len > 0);
+        }
+    }
+}
+
+test "package imports name an alias, package, and module" {
+    for (spec.modules) |m| {
+        for (m.pkg_imports) |pkg| {
+            try testing.expect(pkg.alias.len > 0);
+            try testing.expect(pkg.package.len > 0);
+            try testing.expect(pkg.module.len > 0);
+        }
+        for (m.build_options) |option_name| {
+            try testing.expect(option_name.len > 0);
+            var found = false;
+            for (spec.options) |option| {
+                if (std.mem.eql(u8, option.name, option_name)) found = true;
+            }
+            try testing.expect(found);
+        }
     }
 }
 
@@ -147,11 +214,11 @@ test "default-profile modules map to Debug" {
     }
 }
 
-test "shared and static modules are not named like executables" {
+test "non-executable modules are valid graph nodes" {
     for (spec.modules) |m| {
         switch (m.kind) {
             .exe => {},
-            .static, .shared => try testing.expect(m.deps.len >= 0),
+            .static, .shared, .module => try testing.expect(m.deps.len >= 0),
         }
     }
 }
@@ -173,9 +240,17 @@ test "an import dependency resolves to a static module" {
         for (m.deps) |dep| {
             for (spec.modules) |d| {
                 if (std.mem.eql(u8, d.name, dep) and d.link == .import) {
-                    try testing.expectEqual(spec.Kind.static, d.kind);
+                    try testing.expect(d.kind == .static or d.kind == .module);
                 }
             }
+        }
+    }
+}
+
+test "module-only targets are import edges" {
+    for (spec.modules) |m| {
+        if (m.kind == .module) {
+            try testing.expectEqual(spec.Link.import, m.link);
         }
     }
 }

@@ -8,10 +8,28 @@ Every module is a `#Module` with these fields:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `kind` | `"exe"` `"static"` `"shared"` | yes | — | Output type |
+| `kind` | `"exe"` `"static"` `"shared"` `"module"` | yes | — | Output type |
 | `root` | `string` | yes | — | Root source file path |
 | `deps` | `[...string]` | no | `[]` | Names of modules this depends on |
 | `profile` | `"debug"` `"release"` | no | `"debug"` | Optimization profile |
+| `link` | `"abi"` `"import"` | no | `"abi"` | Whether dependents link or import this module |
+| `pre` | command list | no | `[]` | Commands to run before compiling this module |
+| `post` | command list | no | `[]` | Commands to run after installing this module |
+| `pkg_imports` | package import list | no | `[]` | Imports from `build.zig.zon` dependencies |
+| `build_options` | `[...string]` | no | `[]` | Names of typed options to expose to the module |
+| `native` | native metadata | no | `{}` | C sources, include dirs, system libs, frameworks |
+
+You can also declare the supported Zig lanes for the project:
+
+```cue
+toolchain: zig: {
+    lanes: ["0.14", "0.15", "0.16"]
+    preferred: "0.15"
+}
+```
+
+Leave it out for the default three maintained lanes. Narrow it when a project
+depends on one Zig minor release's `std.Build` API.
 
 ## Minimal Example
 
@@ -24,7 +42,92 @@ app: #Module & {
 }
 ```
 
-One module. Four lines. Debug mode by default.
+One executable. Three lines. Debug mode by default.
+
+Use `kind: "module"` for a named Zig module that other targets import but that
+should not produce a static library or executable.
+
+## Package Imports
+
+Top-level `packages` can mirror the dependency intent from `build.zig.zon` for
+diagnostics and corpus reporting:
+
+```cue
+packages: known_folders: {
+    url: "https://example.invalid/known-folders.tar.gz"
+    hash: "..."
+    lazy: false
+}
+```
+
+Use `pkg_imports` when the module imports a dependency from `build.zig.zon`:
+
+```cue
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    pkg_imports: [{
+        alias: "known-folders"
+        package: "known_folders"
+        module: "known-folders"
+    }]
+}
+```
+
+This maps to:
+
+```zig
+const dep = b.dependency("known_folders", .{ .target = target, .optimize = optimize });
+module.addImport("known-folders", dep.module("known-folders"));
+```
+
+## Build Options
+
+Declare typed options once, then opt modules into an options import:
+
+```cue
+options: [{
+    name: "enable_tracy"
+    type: "bool"
+    description: "Enable Tracy instrumentation"
+    default: false
+}]
+
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    build_options: ["enable_tracy"]
+    build_options_import: "build-options"
+}
+```
+
+This exposes `@import("build-options").enable_tracy` through Zig's generated
+options module.
+
+## Native Metadata
+
+Use `native` for C and platform linkage:
+
+```cue
+native: {
+    c_sources: ["src/native.c"]
+    include_dirs: ["include"]
+    system_libs: ["sqlite3"]
+    pkg_config_libs: ["libinput"]
+    frameworks: ["CoreFoundation"]
+    link_libc: true
+}
+```
+
+## Generated Commands
+
+Use `pre` for code generators that must run before compilation and `post` for
+copy/sign/package commands that run after the artifact is installed:
+
+```cue
+pre: [{ argv: ["zig", "run", "tools/gen.zig"] }]
+post: [{ argv: ["cp", "zig-out/bin/app", "dist/app"] }]
+```
 
 ## With Dependencies
 
