@@ -1286,11 +1286,18 @@ Mach, MicroZig, libvaxis, Capy, and zig-gamedev, plus the gaps those projects
 expose in Azazel and Zaza.
 
 Use `tools/huge_corpus.py --prepare` to create the fork overlays,
-`tools/huge_corpus.py --audit` to record the host Zig baseline, and
-`tools/huge_corpus.py --parity` to emit `parity-results.json`. Parity reports
-compare the observed baseline classification with each repo's manifest and keep
-Azazel marked `scaffold-only` until a declared target slice is actually
-translated and runnable.
+`tools/huge_corpus.py --audit` to record the host Zig baseline,
+`tools/huge_corpus.py --build` to prove the upstream build with the declared
+toolchain, and `tools/huge_corpus.py --parity` to emit `parity-results.json`.
+Parity reports compare the observed baseline classification with each repo's
+manifest and keep Azazel marked `scaffold-only` until a declared target slice is
+actually translated and runnable.
+
+As of the 2026-07-31 proof run, `libxev`, `libvaxis`, and `zig-gamedev` build
+successfully with their declared Zig lanes. The other corpus projects are
+blocked by concrete non-Azazel issues: ZLS's supported dev-toolchain window,
+River host system dependencies, Mach's custom Zig mirror, MicroZig dependency
+fetching, and Capy's transitive package-format drift.
 
 ---
 

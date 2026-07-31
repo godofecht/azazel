@@ -11,11 +11,12 @@ Environment for the first pass:
 
 Forks live under `godofecht/*`; integration branches use
 `azazel-zaza-integration`. Use `tools/huge_corpus.py` to prepare, audit, or
-produce parity-readiness reports for the corpus:
+produce build/parity-readiness reports for the corpus:
 
 ```sh
 tools/huge_corpus.py --prepare --push
 tools/huge_corpus.py --audit
+tools/huge_corpus.py --build
 tools/huge_corpus.py --parity
 tools/huge_corpus.py --audit --repo zls --repo microzig
 ```
@@ -76,6 +77,39 @@ The current manifests mark Azazel status as `scaffold-only`. That is deliberate:
 the reports are allowed to prove that the corpus is blocked by toolchain/API
 gaps, but they must not claim replacement parity until Azazel can actually
 translate and run the declared target slice.
+
+## Build Proof Reports
+
+Run:
+
+```sh
+tools/huge_corpus.py --build
+tools/huge_corpus.py --build --repo libxev --repo zig-gamedev
+```
+
+The runner resolves the manifest's declared Zig toolchain, runs the repo's
+actual build command, and writes `build-results.json` in the clone root. The
+report is intentionally separate from parity: a repo can build with its upstream
+`build.zig` while Azazel remains `scaffold-only`.
+
+Fresh proof run on 2026-07-31 from `/tmp/azazel-huge-proof`:
+
+| Project | Zig used | Build result | Meaning |
+| --- | --- | --- | --- |
+| `zls` | `0.17-dev` | `zig-toolchain` | ZLS rejects current master `0.17.0-dev.1509+bb296ab9b`; the older accepted dev build is no longer available from the Zig build archive. |
+| `libxev` | `0.16.0` | `ok` | Upstream build succeeds. |
+| `river` | `0.16.0` | `system-dependency` | Zig graph gets past API drift, then host `pkg-config` cannot locate `wayland-scanner`. |
+| `mach` | `mach-2026.4.10` | `missing-toolchain` | Mach requires custom Zig `2026.4.10-mach`; the mirror currently redirects but returns `unable to fetch: UpstreamError` for the Apple Silicon archive. |
+| `microzig` | `0.16.0` | `dependency-fetch` | Fetching the `lwip` zip dependency fails while creating Zig's temporary zip file. |
+| `libvaxis` | `0.16.0` | `ok` | Upstream build succeeds. |
+| `capy` | `0.14.1` | `dependency-format` | Transitive `zig-objc` dependency still uses string `.name`, rejected by Zig package parsing. |
+| `zig-gamedev` | `0.15.2` | `ok` | Upstream build succeeds after repairing the integration branch to include upstream files plus `.azazel`. |
+
+Current successful upstream builds: `libxev`, `libvaxis`, and `zig-gamedev`.
+Current Azazel benefit is reproducible toolchain/build diagnostics plus fork
+metadata. Full build replacement is not claimed yet. Zaza is not inserted into
+these pure-Zig upstream build graphs unless a repo has a C/C++ target slice that
+we explicitly model.
 
 ## Current Audit Results
 
