@@ -18,7 +18,7 @@ No JSON runtime. No flags. No ceremony.
 package build
 
 core: #Module & {
-    kind: "static"
+    kind: "module"
     root: "src/core.zig"
 }
 
@@ -30,7 +30,8 @@ app: #Module & {
 }
 ```
 
-That's the entire project configuration. Two modules, four fields each.
+That's the core project configuration. Toolchain lanes, import-mode linking,
+and post-build commands are opt-in when a project needs them.
 
 ## Quick Start
 
@@ -43,13 +44,16 @@ cd azazel
 ```
 
 `setup.sh` reports the versions of `zig`, `cue` and `python3`, prints install
-hints for anything missing, then runs the full pipeline. It is safe to run
+hints for anything missing, then runs the full pipeline. It uses a
+Zig-version-specific cache directory by default, so switching between the
+0.14/0.15/0.16 lanes does not reuse a stale build runner. It is safe to run
 repeatedly and exits non-zero on the first failure.
 
 ```sh
 ./setup.sh --check-only        # just report tool versions
 ./setup.sh --examples          # also build and test everything in examples/
 ZIG=/path/to/zig ./setup.sh    # use a specific Zig binary
+ZIG_CACHE_DIR=/tmp/azazel-cache ./setup.sh
 ```
 
 Doing it by hand is three commands:
@@ -75,11 +79,29 @@ CUE generates **Zig source code**, not JSON. The build system never parses anyth
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `kind` | `"exe"` \| `"static"` \| `"shared"` | Yes | — | Output type |
+| `kind` | `"exe"` \| `"static"` \| `"shared"` \| `"module"` | Yes | — | Output type |
 | `root` | `string` | Yes | — | Root source file |
 | `deps` | `[...string]` | No | `[]` | Module dependencies |
 | `profile` | `"debug"` \| `"release"` | No | `"debug"` | Optimization level |
 | `link` | `"abi"` \| `"import"` | No | `"abi"` | How dependents consume this module |
+| `pre` | `[{ argv: [...] }]` | No | `[]` | Commands to run before compiling this module |
+| `post` | `[{ argv: [...] }]` | No | `[]` | Commands to run after installing this module |
+| `pkg_imports` | package import list | No | `[]` | Imports from `build.zig.zon` dependencies |
+| `build_options` | `[...string]` | No | `[]` | Typed options to expose through an options module |
+| `native` | native metadata | No | `{}` | C sources, include dirs, system libs, frameworks |
+
+`project.cue` can also declare the supported Zig toolchain lanes:
+
+```cue
+toolchain: zig: {
+    lanes: ["0.14", "0.15", "0.16"]
+    preferred: "0.15"
+}
+```
+
+Azazel intentionally tracks Zig by minor-version lanes because `std.Build`
+changes between Zig releases. The generated `build_spec.zig` records those
+lanes and `build.zig` rejects unsupported lanes before doing any real work.
 
 Two things that catch people out. Every module also has to be listed in
 `export.cue`'s `_modules` map, or it is silently not built. And by default `deps`
@@ -93,6 +115,37 @@ separate artifact and no link step. That rebuilds much faster on pure
 Zig-to-Zig graphs. Keep the default `"abi"` for shared libraries and C or C++
 interop. See [`link`](docs/WIKI.md#link) and
 [`examples/05-import-mode`](examples/05-import-mode/).
+
+For large Zig projects, prefer `kind: "module"` for named modules that should
+never produce an artifact. A `module` target is always consumed by import.
+
+Large projects can also declare package imports and native link metadata:
+
+```cue
+options: [{
+    name: "enable_tracy"
+    type: "bool"
+    description: "Enable Tracy instrumentation"
+    default: false
+}]
+
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    build_options: ["enable_tracy"]
+    pkg_imports: [{
+        alias: "known-folders"
+        package: "known_folders"
+        module: "known-folders"
+    }]
+    native: {
+        link_libc: true
+        system_libs: ["sqlite3"]
+        pkg_config_libs: ["libinput"]
+        frameworks: ["CoreFoundation"]
+    }
+}
+```
 
 ## Examples
 
@@ -121,6 +174,7 @@ schema field with a worked example, how `build_spec.zig` maps onto
 Published at [godofecht.github.io/azazel](https://godofecht.github.io/azazel/),
 regenerated from [docs/WIKI.md](docs/WIKI.md) on every change.
 
+- [Huge Zig Project Corpus](docs/HUGE_PROJECT_CORPUS.md)
 - [The Pipeline](https://godofecht.github.io/azazel/pipeline.html)
 - [Installation](https://godofecht.github.io/azazel/installation.html)
 - [Quickstart](https://godofecht.github.io/azazel/quickstart.html)
@@ -132,13 +186,16 @@ regenerated from [docs/WIKI.md](docs/WIKI.md) on every change.
 ## Editor support
 
 [`ide/`](ide/) has a VS Code extension for authoring `project.cue`: syntax
-highlighting for the `#Module` fields, and inline diagnostics that run
-`cue export -e build` on save and surface schema errors where you typed them. It
-also adds an "Azazel: Generate build_spec" command. Open `ide/vscode` in VS Code
-and press F5 to try it; see [`ide/vscode/README.md`](ide/vscode/README.md).
+highlighting for the `#Module` fields, inline diagnostics that run
+`cue export -e build` on save, graph warnings for missing dependency targets and
+unexported modules, completion for fields and enum values, hover help, and
+go-to-definition from `deps` strings to module declarations. It also adds an
+"Azazel: Generate build_spec" command. Open `ide/vscode` in VS Code and press F5
+to try it; see [`ide/vscode/README.md`](ide/vscode/README.md).
 
-A language server design and a dependency-free stdio prototype live in
-[`ide/DESIGN.md`](ide/DESIGN.md) and [`ide/server`](ide/server/).
+A dependency-free stdio language server with the same diagnostics, completion,
+hover, and definition behavior lives in [`ide/server`](ide/server/); see
+[`ide/DESIGN.md`](ide/DESIGN.md).
 
 ## Install
 
@@ -149,8 +206,9 @@ zig fetch --save git+https://github.com/godofecht/azazel
 ```
 
 Most projects use it as a starting point rather than a linked dependency: copy a
-directory from `examples/` (or the repo root) and edit `project.cue`. Requires
-Zig 0.14.1, 0.15.2, or 0.16.0.
+directory from `examples/` (or the repo root) and edit `project.cue`. The
+maintained Zig lanes are 0.14.x, 0.15.x, and 0.16.x; project configs can narrow
+that list with `toolchain.zig.lanes`.
 
 ## Part of the Zaza Ecosystem
 
