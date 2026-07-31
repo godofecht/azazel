@@ -24,9 +24,11 @@ Source: <https://github.com/godofecht/azazel>
   - [`profile`](#profile)
   - [`#Kind`](#kind-1)
   - [`#Profile` and `#Profiles`](#profile-and-profiles)
-  - [`export.cue`](#exportcue)
+- [`export.cue`](#exportcue)
 - [From build_spec.zig to build.zig](#from-build_speczig-to-buildzig)
 - [Examples](#examples)
+- [Editor support](#editor-support)
+- [Huge project corpus](#huge-project-corpus)
 - [Troubleshooting](#troubleshooting)
 - [File reference](#file-reference)
 
@@ -51,9 +53,11 @@ does not change when your project does.
 The generated file in between is Zig source, so there is no parser and no JSON
 at build time. The module list is a compile-time constant.
 
-The surface is deliberately small. Four fields per module. No compiler flags,
-no include paths, no platform triples, no linker options. `#Module` is a
-closed CUE definition, so there is no escape hatch either:
+The surface is deliberately small. Modules describe their artifact shape,
+source root, dependency edges, link mode, profile, and optional post-build
+commands. There are still no arbitrary compiler flags, include paths, platform
+triples, or linker options. `#Module` is a closed CUE definition, so there is no
+escape hatch either:
 
 ```
 $ cue export -e build
@@ -97,12 +101,14 @@ Nothing watches for you.
 
 | Tool | Version | Why |
 |------|---------|-----|
-| Zig | 0.14.1 or 0.15.2 | builds everything |
+| Zig | 0.14.x, 0.15.x or 0.16.x | supported `std.Build` lanes |
 | CUE | v0.16.0 | validates and exports the config |
 | Python 3 | any 3.x | `gen_build_spec.sh` uses it to emit Zig from CUE's JSON |
 
-Those two Zig versions are the tested ones. `build.zig` uses the
-`root_module` API, so expect older releases to fail at configuration.
+Azazel is maintained by Zig minor-version lane because `std.Build` changes
+between releases. Project configs can narrow the supported lanes with
+`toolchain.zig.lanes`; the generated `build_spec.zig` records that contract and
+`build.zig` rejects an unsupported host lane before compiling modules.
 
 macOS:
 
@@ -127,8 +133,9 @@ cd azazel
 ```
 
 `setup.sh` checks the toolchain, generates `build_spec.zig`, builds, and runs
-the tests. It is safe to run repeatedly and exits non-zero on the first
-failure.
+the tests. It uses Zig-version-specific cache directories by default, so
+switching between the 0.14/0.15/0.16 lanes does not reuse a stale build runner.
+It is safe to run repeatedly and exits non-zero on the first failure.
 
 ```
 $ ./setup.sh
@@ -170,6 +177,7 @@ Other invocations:
 ./setup.sh --examples                also build and test everything in examples/
 ZIG=/path/to/zig ./setup.sh          use a specific Zig binary
 CUE=/path/to/cue ./setup.sh          use a specific CUE binary
+ZIG_CACHE_DIR=/tmp/azazel-cache ./setup.sh
 ./setup.sh --help
 ```
 
@@ -317,9 +325,14 @@ Steps:
 ```cue
 package build
 
-#Kind:    "exe" | "static" | "shared"
+#Kind:    "exe" | "static" | "shared" | "module"
 #Profile: "debug" | "release"
 #Link:    "abi" | "import"
+#ZigLane: "0.14" | "0.15" | "0.16"
+
+#Command: {
+	argv: [...string]
+}
 
 #Module: {
 	kind:     #Kind
@@ -327,9 +340,14 @@ package build
 	deps: [...string] | *[]
 	profile:  #Profile | *"debug"
 	link:     #Link | *"abi"
+	post: [...#Command] | *[]
 
 	if kind == "shared" {
 		link: "abi"
+	}
+
+	if kind == "module" {
+		link: "import"
 	}
 }
 
@@ -343,6 +361,15 @@ package build
 }
 
 profiles: #Profiles
+
+#Toolchain: {
+	zig: {
+		lanes: [...#ZigLane] | *["0.14", "0.15", "0.16"]
+		preferred: #ZigLane | *"0.15"
+	}
+}
+
+toolchain: #Toolchain | *{}
 ```
 
 That is the whole type system. You rarely edit it. Everything below describes
@@ -357,6 +384,12 @@ how each part behaves.
 | `deps` | `[...string]` | no | `[]` |
 | `profile` | `#Profile` | no | `"debug"` |
 | `link` | `#Link` | no | `"abi"` |
+| `pre` | `[...#Command]` | no | `[]` |
+| `post` | `[...#Command]` | no | `[]` |
+| `pkg_imports` | `[...#PackageImport]` | no | `[]` |
+| `build_options` | `[...string]` | no | `[]` |
+| `build_options_import` | `string` | no | `"build-options"` |
+| `native` | `#Native` | no | `{}` |
 
 `#Module` is a CUE definition, which makes it closed. Any field not in that
 table is rejected.
@@ -372,9 +405,120 @@ The CUE field name becomes the module name, which becomes the artifact name.
 
 ---
 
+### `toolchain`
+
+Optional top-level project contract for the Zig lanes the generated spec
+supports:
+
+```cue
+toolchain: zig: {
+	lanes: ["0.14", "0.15", "0.16"]
+	preferred: "0.15"
+}
+```
+
+Use this when a project or generated `build.zig` intentionally supports only a
+subset of Zig's moving `std.Build` API. The generated spec embeds the lanes, and
+`build.zig` fails early if the current compiler is outside that list.
+
+---
+
+### `pkg_imports`
+
+Top-level `packages` mirrors package dependency intent for diagnostics and
+corpus reporting:
+
+```cue
+packages: known_folders: {
+	url: "https://example.invalid/known-folders.tar.gz"
+	hash: "..."
+	lazy: false
+}
+```
+
+Imports modules from `build.zig.zon` package dependencies:
+
+```cue
+app: #Module & {
+	kind: "exe"
+	root: "src/main.zig"
+	pkg_imports: [{
+		alias: "known-folders"
+		package: "known_folders"
+		module: "known-folders"
+	}]
+}
+```
+
+This maps to `b.dependency(package, .{ .target = target, .optimize = optimize })`
+followed by `root_module.addImport(alias, dep.module(module))`.
+
+---
+
+### `build_options`
+
+Top-level `options` declare typed `b.option` values. A module lists the option
+names it wants exposed through a generated options import:
+
+```cue
+options: [{
+	name: "enable_tracy"
+	type: "bool"
+	description: "Enable Tracy instrumentation"
+	default: false
+}]
+
+app: #Module & {
+	kind: "exe"
+	root: "src/main.zig"
+	build_options: ["enable_tracy"]
+	build_options_import: "build-options"
+}
+```
+
+Supported option types are `bool`, `string`, and `u32`.
+
+---
+
+### `pre` and `post`
+
+`pre` commands run before the module artifact compiles. Use them for simple
+code-generation or stamping steps that do not yet need output-file tracking.
+`post` commands run after the artifact install step and are suited to copy,
+sign, or package commands.
+
+```cue
+pre: [{ argv: ["zig", "run", "tools/gen.zig"] }]
+post: [{ argv: ["cp", "zig-out/bin/app", "dist/app"] }]
+```
+
+---
+
+### `native`
+
+Native metadata covers C sources and platform link inputs:
+
+```cue
+native: {
+	c_sources: ["src/native.c"]
+	include_dirs: ["include"]
+	system_libs: ["sqlite3"]
+	pkg_config_libs: ["libinput"]
+	frameworks: ["CoreFoundation"]
+	link_libc: true
+}
+```
+
+It maps onto `std.Build.Module` APIs such as `addCSourceFile`,
+`addIncludePath`, `linkSystemLibrary`, `linkFramework`, `link_libc`, and
+`link_libcpp`. `pkg_config_libs` uses `linkSystemLibrary` with forced
+pkg-config resolution.
+
+---
+
 ### `kind`
 
-Required. One of `"exe"`, `"static"`, `"shared"`. Decides which
+Required. One of `"exe"`, `"static"`, `"shared"`, `"module"`. Decides which
 `std.Build` call `build.zig` makes and where the artifact lands.
 
 ```cue
@@ -1114,6 +1258,35 @@ own.
 
 ---
 
+## Editor support
+
+`ide/vscode` contains a dependency-free VS Code extension for authoring
+`project.cue` files. It provides CUE syntax highlighting, inline `cue export -e
+build` diagnostics, and two azazel graph warnings that CUE cannot express:
+
+- a `deps` string that names no module in `project.cue`
+- a module that is absent from `export.cue`'s `_modules` map
+
+It also provides completion for `#Module` fields and enum values, hover help for
+fields and enum values, go-to-definition from a dependency string to its module
+declaration, and the `Azazel: Generate build_spec` command.
+
+Open `ide/vscode` in VS Code and press F5 to try it from source. The shared
+language feature logic is also exposed by the stdio LSP prototype in
+`ide/server/server.js`; run `node ide/server/test-client.js` for a smoke test.
+
+---
+
+## Huge project corpus
+
+Azazel's small examples are smoke tests, not the target ceiling. The large-repo
+pressure suite is tracked in [HUGE_PROJECT_CORPUS.md](HUGE_PROJECT_CORPUS.md).
+It records real build graph shapes from projects such as ZLS, libxev, River,
+Mach, MicroZig, libvaxis, Capy, and zig-gamedev, plus the gaps those projects
+expose in Azazel and Zaza.
+
+---
+
 ## Troubleshooting
 
 ### `unable to load 'build_spec.zig': FileNotFound`
@@ -1216,8 +1389,9 @@ app.flags: field not allowed:
     ./project.cue:8:2
 ```
 
-`#Module` is closed. Only `kind`, `root`, `deps` and `profile` exist. If you
-need something else, add it to `build.zig` directly.
+`#Module` is closed. Only `kind`, `root`, `deps`, `profile`, `link`, and `post`
+exist. If you need something else, add it to the schema and generator, or wire
+it into `build.zig` directly.
 
 ### `conflicting values "X" and "Y"`
 
@@ -1249,14 +1423,16 @@ not, because it has no executable that links a shared library.
 `./gen_build_spec.sh` after every edit to `project.cue`, `export.cue` or
 `schema.cue`.
 
-### A Zig version other than 0.14.1 or 0.15.2
+### A Zig version outside the declared lanes
 
-`build.zig` uses `b.createModule` with `.root_module`, and `addLibrary` with
-an explicit `linkage`. Older releases spell both differently, so expect
-configuration errors below 0.14. `setup.sh` prints a note for anything
-outside 0.14.x and 0.15.x but does not stop you.
+Azazel's generated spec declares supported lanes under `toolchain.zig.lanes`.
+The default lanes are `0.14`, `0.15`, and `0.16`. `build.zig` checks the current
+compiler against that list at compile time and stops with a toolchain error if
+the lane is unsupported.
 
-Only 0.14.1 and 0.15.2 are tested.
+This is deliberate: Zig build APIs move quickly, and a clean lane error is more
+useful than a later failure inside `std.Build`, a dependency build script, or a
+generated source step.
 
 ---
 

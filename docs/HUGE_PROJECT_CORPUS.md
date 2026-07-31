@@ -1,0 +1,93 @@
+# Huge Zig Project Corpus
+
+This corpus tracks large real-world Zig projects used to pressure-test Azazel
+and Zaza beyond toy `zig run` examples.
+
+Environment for the first pass:
+
+- Date: 2026-07-31
+- Host Zig: 0.14.0
+- Clone root: `/tmp/azazel-huge`
+
+Forks live under `godofecht/*`; integration branches use
+`azazel-zaza-integration`. Use `tools/huge_corpus.py` to prepare or audit the
+corpus:
+
+```sh
+tools/huge_corpus.py --prepare --push
+tools/huge_corpus.py --audit
+```
+
+## Baseline Audit
+
+| Project | Shape | Baseline result on host Zig | Pressure points |
+| --- | --- | --- | --- |
+| `zigtools/zls` | Language server with generated version data, tests, coverage, release signing, package deps | `zig build --help` fails: ZON import needs newer Zig result typing | Zig version constraints, generated run artifacts, package deps, build options, release-only post commands |
+| `mitchellh/libxev` | Cross-platform event-loop library with static/dynamic libs, examples, benches, manpage generation | `zig build --help` fails: build script expects `b.graph.io` | Library variants, conditional examples, manpage generators, platform system libs |
+| `riverwm/river` | Wayland compositor with pkg-config/system deps and generated translation modules | Dependency resolution fails fetching Codeberg `translate-c` | External dependency diagnostics, pkg-config system libraries, C sources, generated translate-C modules |
+| `hexops/mach` | Game engine with modules, examples, editor project, generated Vulkan bindings, native backends | Fails on required custom Mach Zig version and newer FS API | Custom Zig toolchain constraints, assets, backend options, generated sources, helper build APIs |
+| `ZigEmbeddedGroup/microzig` | Embedded workspace with many nested `build.zig` and `.zon` packages | Dependency resolution fails through Codeberg `translate-c` from `libxml2` | Workspace/package graph, embedded targets, tools, board ports, nested build packages |
+| `rockorager/libvaxis` | TUI library with many examples and test/install steps | `zig build --help` fails on Zig 0.14 format/build API incompatibility | Example matrix, installable demos, tests, host Zig compatibility diagnostics |
+| `capy-ui/capy` | Native UI toolkit with custom build helper | Fails fast: requires Zig 0.14.1 exactly | Minimum/exact Zig version constraints, platform UI backends, custom helper build layer |
+| `zig-gamedev/zig-gamedev` | Large game-dev monorepo with assets and package deps | Clone required heavy filtering; build help fails in deps (`zphysics`, `ztracy`) on Zig 0.14 | Large asset graphs, dependency API drift, package-level diagnostics, optional example selection |
+
+## Integration Branches
+
+Prepared and pushed on the forks:
+
+| Fork | Branch |
+| --- | --- |
+| `godofecht/zls` | `azazel-zaza-integration` |
+| `godofecht/libxev` | `azazel-zaza-integration` |
+| `godofecht/river` | `azazel-zaza-integration` |
+| `godofecht/mach` | `azazel-zaza-integration` |
+| `godofecht/microzig` | `azazel-zaza-integration` |
+| `godofecht/libvaxis` | `azazel-zaza-integration` |
+| `godofecht/capy` | `azazel-zaza-integration` |
+| `godofecht/zig-gamedev` | `azazel-zaza-integration` |
+
+Each branch has a `.azazel/` scaffold with repo metadata, a starting
+`project.cue`, and integration notes. The scaffold intentionally leaves upstream
+source untouched; full parity work proceeds feature by feature against the
+baseline audit.
+
+## Current Audit Results
+
+`tools/huge_corpus.py --audit` on host Zig 0.14.0 reports:
+
+| Project | Result |
+| --- | --- |
+| `zls` | fails before build graph execution: `@import` of ZON needs a known result type |
+| `libxev` | fails before build graph execution: build script expects `b.graph.io` |
+| `river` | dependency resolution fails fetching Codeberg `translate-c` |
+| `mach` | fails on newer filesystem API and explicit custom Mach Zig requirement |
+| `microzig` | dependency resolution fails fetching Codeberg `translate-c` through `libxml2` |
+| `libvaxis` | fails on host Zig format/build API drift |
+| `capy` | fails fast: exact Zig 0.14.1 required |
+| `zig-gamedev` | dependency build scripts fail on Zig API drift (`lto`, `std.fmt.printInt`) |
+
+## Azazel Gaps Exposed
+
+- Toolchain constraints: lane support now exists for `0.14`, `0.15`, and `0.16`; exact/custom toolchains still need richer metadata.
+- Package dependencies: package module imports now exist; dependency declarations, hashes, paths, lazy dependencies, and failures still need richer modeling.
+- Named modules without artifacts: `kind: "module"` now represents `b.addModule` and pure module imports.
+- Build options: typed booleans, strings, and `u32` defaults now exist; enums/lists still need modeling.
+- Generated sources: pre-build command nodes now exist; `addRunArtifact` output-file tracking still needs modeling.
+- Native integration: C sources, include paths, link system libraries, pkg-config libraries, library paths, object files, frameworks, libc, and libc++ now exist.
+- Multi-step outputs: support install/run/test/doc/sign/package steps without hard-coding one global install flow.
+- Workspaces: support nested build packages and subprojects, especially MicroZig-style trees.
+- Diagnostics: distinguish "unsupported host Zig", "dependency fetch failed", "system dependency missing", and "translation unsupported".
+
+## Zaza Gaps Exposed
+
+- Post-build commands need to compose with generated artifacts and installed artifacts across CMake and Zig branches.
+- System-command enablement should produce precise errors naming the target and command that was skipped.
+- C/C++ integration needs parity with Zig build metadata: include paths, link libraries, frameworks, and per-config commands.
+- Large repo support needs a corpus runner that can select subsets instead of building every example/tool by default.
+
+## Next Targets
+
+1. Add enum/list build options.
+2. Add package dependency declarations/hashes and dependency-fetch diagnostics.
+3. Add generated-file/run-artifact output tracking.
+4. Expand the corpus runner from scaffold/audit to full baseline-vs-Azazel parity runs.

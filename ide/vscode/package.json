@@ -17,6 +17,9 @@
     "Linters"
   ],
   "main": "./extension.js",
+  "scripts": {
+    "test": "node --test"
+  },
   "activationEvents": [
     "onLanguage:cue",
     "workspaceContains:**/project.cue",

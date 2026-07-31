@@ -56,9 +56,15 @@ if command -v "$ZIG" >/dev/null 2>&1; then
 	ZIG_VERSION=$("$ZIG" version)
 	say "  zig      $ZIG_VERSION   ($(command -v "$ZIG"))"
 	case "$ZIG_VERSION" in
-	0.14.* | 0.15.*) ;;
-	*) say "           note: tested against 0.14.1 and 0.15.2. Others may work." ;;
+	0.14.* | 0.15.* | 0.16.*) ;;
+	*) say "           note: tested lanes are 0.14.x, 0.15.x and 0.16.x. Others may work." ;;
 	esac
+	CACHE_SUFFIX=$(printf '%s' "$ZIG_VERSION" | tr -c 'A-Za-z0-9._-' '_')
+	ZIG_CACHE_DIR=${ZIG_CACHE_DIR:-"$ROOT/.zig-cache-$CACHE_SUFFIX"}
+	ZIG_GLOBAL_CACHE_DIR=${ZIG_GLOBAL_CACHE_DIR:-"$ROOT/.zig-cache-global-$CACHE_SUFFIX"}
+	ZIG_LOCAL_CACHE_DIR=${ZIG_LOCAL_CACHE_DIR:-"$ZIG_CACHE_DIR"}
+	export ZIG_GLOBAL_CACHE_DIR ZIG_LOCAL_CACHE_DIR
+	say "           cache: $ZIG_CACHE_DIR"
 else
 	missing=1
 	say "  zig      MISSING"
@@ -111,10 +117,10 @@ step "Generating build_spec.zig"
 ./gen_build_spec.sh
 
 step "Building"
-"$ZIG" build
+"$ZIG" build --cache-dir "$ZIG_CACHE_DIR"
 
 step "Testing"
-"$ZIG" build test --summary all
+"$ZIG" build test --cache-dir "$ZIG_CACHE_DIR" --summary all
 
 # --- examples --------------------------------------------------------------
 
@@ -126,10 +132,10 @@ if [ "$WITH_EXAMPLES" -eq 1 ]; then
 		cd "$ROOT/$dir"
 		./gen_build_spec.sh
 		if [ -f build.zig ]; then
-			"$ZIG" build
+			"$ZIG" build --cache-dir "$ZIG_CACHE_DIR"
 			# Only run the test step if the example defines one.
 			if grep -q 'b.step("test"' build.zig; then
-				"$ZIG" build test --summary all
+				"$ZIG" build test --cache-dir "$ZIG_CACHE_DIR" --summary all
 			fi
 		fi
 		if [ -f check.sh ]; then
