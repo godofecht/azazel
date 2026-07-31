@@ -1,10 +1,14 @@
 // Azazel VS Code extension.
 //
-// First increment: syntax awareness for .cue build files, inline diagnostics
-// from cue on open and on save, and a command to run gen_build_spec.sh. The
-// diagnostics run in-process here (no language server yet). The LSP that will
-// eventually replace this in-process path is described in ../DESIGN.md and
-// prototyped in ../server/server.js.
+// Syntax awareness for .cue build files, inline diagnostics from cue plus the
+// two graph cross-checks cue cannot do, a command to run gen_build_spec.sh, and
+// language features: completion for #Module fields and enum values, hover, and
+// go-to-definition from a deps entry to the module it names.
+//
+// The features run in-process here, sharing the exact schema model, symbol
+// index, and feature logic with the LSP server (../server/server.js) through
+// ./schemaModel.js, ./symbolIndex.js, and ./features.js, so the two never
+// drift. The LSP is the portable path for other editors; see ../DESIGN.md.
 
 'use strict';
 
@@ -12,6 +16,25 @@ const vscode = require('vscode');
 const cp = require('child_process');
 const path = require('path');
 const { findPackageDir, runCue, parseCueErrors } = require('./cueDiagnostics');
+const { loadForPackage } = require('./schemaModel');
+const { buildIndex } = require('./symbolIndex');
+const features = require('./features');
+
+// Build a symbol index for the package owning `document`, with the document's
+// current (possibly unsaved) text overriding disk.
+function indexForDocument(pkgDir, document) {
+  const overrides = {};
+  if (document && document.uri.scheme === 'file') {
+    overrides[document.uri.fsPath] = document.getText();
+  }
+  return buildIndex(pkgDir, overrides);
+}
+
+function schemaForDocument(document) {
+  if (!document || document.uri.scheme !== 'file') return null;
+  const pkgDir = findPackageDir(path.dirname(document.uri.fsPath));
+  return pkgDir ? loadForPackage(pkgDir) : null;
+}
 
 let diagnostics;
 let output;
@@ -52,35 +75,54 @@ async function validateDocument(document) {
   );
   for (const uri of owned) diagnostics.delete(uri);
 
-  if (result.code === 0) return; // clean
-
-  const problems = parseCueErrors(result.output, pkgDir);
   const byFile = new Map();
-  for (const p of problems) {
-    // A missing-field error only carries a schema.cue location. Re-home it onto
-    // the edited document so the user sees it where they can fix it.
-    let targetPath = p.absPath;
-    let line = p.line;
-    let col = p.col;
-    if (path.basename(targetPath) === 'schema.cue') {
-      targetPath = document.uri.fsPath;
-      line = 1;
-      col = 1;
+
+  if (result.code !== 0) {
+    const problems = parseCueErrors(result.output, pkgDir);
+    for (const p of problems) {
+      // A missing-field error only carries a schema.cue location. Re-home it
+      // onto the edited document so the user sees it where they can fix it.
+      let targetPath = p.absPath;
+      let line = p.line;
+      let col = p.col;
+      if (path.basename(targetPath) === 'schema.cue') {
+        targetPath = document.uri.fsPath;
+        line = 1;
+        col = 1;
+      }
+      const range = new vscode.Range(
+        Math.max(0, line - 1),
+        Math.max(0, col - 1),
+        Math.max(0, line - 1),
+        Math.max(0, col)
+      );
+      const diag = new vscode.Diagnostic(
+        range,
+        p.message,
+        vscode.DiagnosticSeverity.Error
+      );
+      diag.source = 'azazel (cue)';
+      if (!byFile.has(targetPath)) byFile.set(targetPath, []);
+      byFile.get(targetPath).push(diag);
     }
+  }
+
+  const projectPath = path.join(pkgDir, 'project.cue');
+  for (const p of features.crossCheckDiagnostics(indexForDocument(pkgDir, document))) {
     const range = new vscode.Range(
-      Math.max(0, line - 1),
-      Math.max(0, col - 1),
-      Math.max(0, line - 1),
-      Math.max(0, col)
+      p.line,
+      p.character,
+      p.line,
+      p.endCharacter
     );
     const diag = new vscode.Diagnostic(
       range,
       p.message,
-      vscode.DiagnosticSeverity.Error
+      vscode.DiagnosticSeverity.Warning
     );
-    diag.source = 'azazel (cue)';
-    if (!byFile.has(targetPath)) byFile.set(targetPath, []);
-    byFile.get(targetPath).push(diag);
+    diag.source = 'azazel';
+    if (!byFile.has(projectPath)) byFile.set(projectPath, []);
+    byFile.get(projectPath).push(diag);
   }
 
   for (const [fsPath, diags] of byFile) {
@@ -138,6 +180,62 @@ function activate(context) {
     vscode.workspace.onDidSaveTextDocument((doc) => validateDocument(doc)),
     vscode.workspace.onDidOpenTextDocument((doc) => validateDocument(doc)),
     vscode.workspace.onDidCloseTextDocument((doc) => diagnostics.delete(doc.uri))
+  );
+
+  const cueSelector = { language: 'cue', scheme: 'file' };
+  context.subscriptions.push(
+    vscode.languages.registerCompletionItemProvider(
+      cueSelector,
+      {
+        provideCompletionItems(document, position) {
+          const schema = schemaForDocument(document);
+          return features
+            .completionAt(schema, document.getText(), position.line, position.character)
+            .map((item) => {
+              const completion = new vscode.CompletionItem(
+                item.label,
+                item.kind === 'field'
+                  ? vscode.CompletionItemKind.Field
+                  : vscode.CompletionItemKind.EnumMember
+              );
+              completion.detail = item.detail;
+              if (item.doc) completion.documentation = new vscode.MarkdownString(item.doc);
+              return completion;
+            });
+        },
+      },
+      '"',
+      ':',
+      ' '
+    ),
+    vscode.languages.registerHoverProvider(cueSelector, {
+      provideHover(document, position) {
+        const schema = schemaForDocument(document);
+        const hover = features.hoverAt(
+          schema,
+          document.getText(),
+          position.line,
+          position.character
+        );
+        return hover ? new vscode.Hover(new vscode.MarkdownString(hover.markdown)) : null;
+      },
+    }),
+    vscode.languages.registerDefinitionProvider(cueSelector, {
+      provideDefinition(document, position) {
+        if (document.uri.scheme !== 'file') return null;
+        const pkgDir = findPackageDir(path.dirname(document.uri.fsPath));
+        if (!pkgDir) return null;
+        const def = features.definitionAt(
+          indexForDocument(pkgDir, document),
+          position.line,
+          position.character
+        );
+        if (!def) return null;
+        const uri = vscode.Uri.file(path.join(pkgDir, 'project.cue'));
+        const pos = new vscode.Position(def.line, def.character);
+        return new vscode.Location(uri, pos);
+      },
+    })
   );
 
   // Validate anything already open at activation.

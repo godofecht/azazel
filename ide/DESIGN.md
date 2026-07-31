@@ -1,9 +1,9 @@
 # Azazel language server: design
 
-The VS Code extension in [`vscode/`](vscode/) covers the first increment with
-in-process diagnostics. This document describes the language server that will
-carry the richer features, and the prototype that already exists in
-[`server/`](server/).
+The VS Code extension in [`vscode/`](vscode/) now ships in-process diagnostics,
+completion, hover, go-to-definition, and azazel graph warnings. This document
+describes the dependency-free language server in [`server/`](server/) that
+serves the same feature logic over LSP for other editors.
 
 ## Why a server
 
@@ -18,11 +18,11 @@ that starts the process and forwards requests.
 
 ## Scope
 
-Four features, in priority order.
+Four features are implemented in the shared feature layer.
 
-1. **Diagnostics** from `cue`. Already prototyped. Run `cue export -e build` in
-   the package directory, parse the errors, publish them per file. This is the
-   same engine the extension uses, shared through
+1. **Diagnostics** from `cue`. Run `cue export -e build` in the package
+   directory, parse the errors, publish them per file. This is the same engine
+   the extension uses, shared through
    [`vscode/cueDiagnostics.js`](vscode/cueDiagnostics.js).
 2. **Completion** for `#Module` fields and their enum values.
 3. **Hover** documentation for fields and enum values.
@@ -39,10 +39,9 @@ Two contexts, both derivable without a full CUE parser for the first cut.
   `debug`/`release`, `link` gives `abi`/`import`.
 
 The field list and the enum members are read from `schema.cue` so the server
-stays correct when the schema changes. `cue export schema.cue` renders the
-definitions as JSON; the disjunction for `#Kind`, `#Profile`, and `#Link` gives
-the enum members, and the fields of `#Module` give the field names and their
-defaults. Parse that once per workspace, refresh when `schema.cue` changes.
+stays correct when the schema changes. The current prototype parses the
+definition text directly, with no npm or CUE API dependency. A later server can
+replace that with a real CUE syntax tree if needed.
 
 Completion detail can carry the default, for example `profile` completes with
 detail `debug`, and `link` notes that `shared` forces `abi`.
@@ -80,15 +79,16 @@ catch either, so the server should.
 ```
 editor  <--LSP/stdio-->  azazel-lsp
                             |
-                            +-- diagnostics:  cue export -e build   (done)
-                            +-- schema model: cue export schema.cue (planned)
-                            +-- symbol index: scan project.cue      (planned)
+                            +-- diagnostics:  cue export -e build
+                            +-- schema model: parse schema.cue
+                            +-- symbol index: scan project.cue/export.cue
 ```
 
 State the server holds per workspace:
 
 - `schemaModel`: fields, enum members, defaults, parsed from `schema.cue`.
-- `symbolIndex`: module name to declaration range, per package directory.
+- `symbolIndex`: module names, dependency strings, and exported names, per
+  package directory.
 - open document text, for completion and definition on unsaved buffers.
 
 Both derived structures invalidate on save of `schema.cue`, `project.cue`, or
@@ -100,8 +100,8 @@ The prototype speaks LSP over stdio with raw JSON-RPC framing and no npm
 dependencies. That keeps it self-contained and easy to vendor. If the feature
 set grows, the natural next step is `vscode-languageserver` for the protocol
 plumbing and `vscode-languageclient` on the extension side. The trade is a build
-step and a `node_modules`. Hold that until completion and definition are real;
-the raw approach is enough for diagnostics.
+step and a `node_modules`; the raw approach is enough for the current feature
+set.
 
 For the CUE side, two options:
 
@@ -115,11 +115,14 @@ For the CUE side, two options:
 
 [`server/server.js`](server/server.js) is a runnable server. It handles
 `initialize`, `initialized`, `textDocument/didOpen`, `didChange`, `didSave`,
-`didClose`, `shutdown`, and `exit`, and it publishes cue diagnostics. It shares
-the diagnostic engine with the extension.
+`didClose`, `textDocument/completion`, `textDocument/hover`,
+`textDocument/definition`, `shutdown`, and `exit`. It publishes cue diagnostics
+plus the azazel graph warnings, and it shares the diagnostic and feature engines
+with the extension.
 
 Run the smoke test, which spawns the server, runs the handshake, opens a
-document, and prints what the server pushes back:
+document, requests completion, hover, and definition, and prints what the server
+pushes back:
 
 ```sh
 node server/test-client.js /path/to/azazel/examples/03-services   # clean
@@ -127,16 +130,15 @@ node server/test-client.js /path/to/a/broken/package              # errors
 ```
 
 Point any LSP client at `node ide/server/server.js` over stdio to use it in an
-editor today, with diagnostics only. Completion, hover, and definition are the
-next commits against the plan above.
+editor today.
 
 ## Status
 
 | Feature | State |
 |---|---|
-| Diagnostics from cue | prototyped, shared with the extension |
-| LSP handshake and lifecycle | prototyped |
-| Completion (fields, enums) | designed |
-| Hover | designed |
-| Go-to-definition for deps | designed |
-| deps / export.cue cross-checks | designed |
+| Diagnostics from cue | implemented, shared with the extension |
+| LSP handshake and lifecycle | implemented |
+| Completion (fields, enums) | implemented, shared with the extension |
+| Hover | implemented, shared with the extension |
+| Go-to-definition for deps | implemented, shared with the extension |
+| deps / export.cue cross-checks | implemented, shared with the extension |

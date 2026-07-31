@@ -1,8 +1,8 @@
 {
   "name": "azazel",
   "displayName": "Azazel",
-  "description": "Authoring support for azazel project.cue build files: syntax, inline cue diagnostics, and build_spec generation.",
-  "version": "0.1.0",
+  "description": "Authoring support for azazel project.cue build files: syntax, diagnostics, completion, hover, definitions, and build_spec generation.",
+  "version": "0.2.0",
   "publisher": "godofecht",
   "license": "MIT",
   "repository": {

@@ -1,8 +1,8 @@
 # Azazel for VS Code
 
-Authoring support for azazel `project.cue` build files. First increment:
-syntax highlighting for the `#Module` shape, inline `cue` diagnostics on open
-and on save, and a command to regenerate `build_spec.zig`.
+Authoring support for azazel `project.cue` build files: syntax highlighting,
+inline diagnostics, completion, hover, go-to-definition for dependencies, and a
+command to regenerate `build_spec.zig`.
 
 ## What it does
 
@@ -17,17 +17,25 @@ and on save, and a command to regenerate `build_spec.zig`.
   bad enums, wrong types, unknown fields, and missing required fields. A
   missing-field error that CUE can only pin to `schema.cue` is re-homed onto
   line 1 of the file you are editing.
+- **Graph checks.** Azazel adds two warnings that CUE cannot express: a `deps`
+  string that names no module in `project.cue`, and a module that is not listed
+  in `export.cue`'s `_modules` map.
+- **Completion.** Inside `#Module & { ... }`, completion offers missing module
+  fields. On the right of `kind:`, `profile:`, or `link:`, it offers the enum
+  values from `schema.cue`.
+- **Hover.** Hovering an azazel field or enum value shows a short explanation.
+- **Go to definition.** From a string inside `deps`, jump to the matching
+  top-level module declaration in `project.cue`.
 - **Command: `Azazel: Generate build_spec`.** Runs `gen_build_spec.sh` for the
   package that owns the active file and writes `build_spec.zig`. Output goes to
   the "Azazel" output channel.
 - **Command: `Azazel: Validate project.cue`.** Forces a validation pass on the
   active file.
 
-The diagnostics run in-process. They do not replace CUE's own language server;
-they give azazel-aware feedback with no setup beyond having `cue` on PATH. The
-plan to move this onto a real language server is in
-[`../DESIGN.md`](../DESIGN.md), with a working prototype in
-[`../server/`](../server/).
+The features run in-process and share their schema model, symbol index, and
+feature logic with the dependency-free LSP prototype in [`../server/`](../server/).
+They do not replace CUE's own language server; they give azazel-aware feedback
+with no setup beyond having `cue` on PATH.
 
 ## Requirements
 
@@ -59,7 +67,9 @@ dependencies.
 4. Break something, for example change `kind: "exe"` to `kind: "dylib"`, and
    save. A red squiggle appears on the value with the `cue` message. Fix it and
    save again; the squiggle clears.
-5. Run the command: `Cmd/Ctrl+Shift+P` then `Azazel: Generate build_spec`.
+5. Try completion inside a `#Module` block, hover `kind`, or jump from a
+   `deps` string to its module declaration.
+6. Run the command: `Cmd/Ctrl+Shift+P` then `Azazel: Generate build_spec`.
    `build_spec.zig` is written next to `project.cue` and the "Azazel" output
    channel shows the result.
 
@@ -77,15 +87,18 @@ cd azazel/ide/vscode
 vsce package
 ```
 
-Then `code --install-extension azazel-0.1.0.vsix`.
+Then `code --install-extension azazel-0.2.0.vsix`.
 
 ## Layout
 
 ```
 ide/vscode/
   package.json                manifest: language, grammar, commands, settings
-  extension.js                activation, diagnostics, commands
+  extension.js                activation, diagnostics, features, commands
   cueDiagnostics.js           runs cue, parses its errors (shared with the LSP)
+  features.js                 completion, hover, definition, graph diagnostics
+  schemaModel.js              reads #Module fields and enum values from schema.cue
+  symbolIndex.js              scans project.cue and export.cue
   language-configuration.json comments, brackets, auto-closing
   syntaxes/cue.tmLanguage.json  the CUE + azazel grammar
   .vscodeignore
