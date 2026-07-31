@@ -1285,6 +1285,13 @@ It records real build graph shapes from projects such as ZLS, libxev, River,
 Mach, MicroZig, libvaxis, Capy, and zig-gamedev, plus the gaps those projects
 expose in Azazel and Zaza.
 
+Use `tools/huge_corpus.py --prepare` to create the fork overlays,
+`tools/huge_corpus.py --audit` to record the host Zig baseline, and
+`tools/huge_corpus.py --parity` to emit `parity-results.json`. Parity reports
+compare the observed baseline classification with each repo's manifest and keep
+Azazel marked `scaffold-only` until a declared target slice is actually
+translated and runnable.
+
 ---
 
 ## Troubleshooting
