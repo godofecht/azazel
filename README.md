@@ -183,6 +183,11 @@ regenerated from [docs/WIKI.md](docs/WIKI.md) on every change.
 - [Examples](https://godofecht.github.io/azazel/examples.html)
 - [Troubleshooting](https://godofecht.github.io/azazel/troubleshooting.html)
 
+The corpus runner also has an executable parity lane:
+`tools/huge_corpus.py --executable-parity` regenerates Azazel's build spec in a
+repo-local `.azazel/parity-work/` workspace and runs modeled target slices
+against upstream source. The first ready slice is the `libxev` module probe.
+
 ## Editor support
 
 [`ide/`](ide/) has a VS Code extension for authoring `project.cue`: syntax

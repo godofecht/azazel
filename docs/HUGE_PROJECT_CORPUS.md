@@ -19,6 +19,7 @@ tools/huge_corpus.py --audit
 tools/huge_corpus.py --doctor
 tools/huge_corpus.py --build
 tools/huge_corpus.py --parity
+tools/huge_corpus.py --executable-parity
 tools/huge_corpus.py --audit --repo zls --repo microzig
 ```
 
@@ -79,6 +80,32 @@ the reports are allowed to prove that the corpus is blocked by toolchain/API
 gaps, but they must not claim replacement parity until Azazel can actually
 translate and run the declared target slice.
 
+## Executable Azazel Parity
+
+Run:
+
+```sh
+tools/huge_corpus.py --executable-parity
+tools/huge_corpus.py --executable-parity --repo libxev
+```
+
+`--executable-parity` writes `executable-parity-results.json` in the clone root.
+For repos with a modeled target slice, the runner creates an isolated
+`.azazel/parity-work/` workspace, regenerates `build_spec.zig`, resolves the
+repo's declared Zig toolchain, and runs the Azazel-generated build command.
+Repos without a modeled slice report `not-modeled` instead of fake success.
+
+The first executable slice is `libxev`:
+
+- `module:xev` points at upstream `src/main.zig`
+- `exe:xev_probe` imports the module through Azazel's `link: "import"` graph
+- Zig `0.16.0` compiles the generated Azazel build successfully
+
+This proves an Azazel target slice can execute against upstream source. It does
+not claim full libxev build replacement yet; library variants, generated
+pkg-config/manpage outputs, benchmarks, examples, and artifact checks remain
+tracked replacement gaps.
+
 ## Build Proof Reports
 
 Run:
@@ -119,6 +146,12 @@ Current Azazel benefit is reproducible toolchain/build diagnostics plus fork
 metadata. Full build replacement is not claimed yet. Zaza is not inserted into
 these pure-Zig upstream build graphs unless a repo has a C/C++ target slice that
 we explicitly model.
+
+Current executable Azazel parity slices:
+
+| Project | Slice | Result | Boundary |
+| --- | --- | --- | --- |
+| `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
 
 ## Doctor Output
 
@@ -165,11 +198,11 @@ command?" without cloning or compiling. Useful statuses:
 - Post-build commands need to compose with generated artifacts and installed artifacts across CMake and Zig branches.
 - System-command enablement should produce precise errors naming the target and command that was skipped.
 - C/C++ integration needs parity with Zig build metadata: include paths, link libraries, frameworks, and per-config commands.
-- Large repo support now has per-repo parity manifests; the next step is to turn scaffold-only target slices into executable Azazel commands one repo at a time.
+- Large repo support now has per-repo parity manifests and the first executable Azazel parity slice for `libxev`; the next step is to expand slice coverage one repo at a time.
 
 ## Next Targets
 
 1. Add enum/list build options.
 2. Add package dependency declarations/hashes and dependency-fetch diagnostics.
 3. Add generated-file/run-artifact output tracking.
-4. Convert the first `scaffold-only` parity target slice into a real executable Azazel parity command.
+4. Expand executable Azazel parity from the `libxev` module probe to library artifacts, tests, examples, and additional repos.

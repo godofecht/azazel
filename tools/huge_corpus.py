@@ -8,6 +8,7 @@ The runner keeps the corpus reproducible:
 * add a `.azazel/` overlay describing the first integration target
 * optionally run baseline `zig build --help`
 * emit baseline-vs-Azazel parity readiness reports
+* run executable Azazel target-slice parity proofs when a slice is modeled
 
 It does not try to translate every upstream build graph in one pass. The overlay
 is a stable landing zone that lets Azazel and Zaza grow against real projects.
@@ -47,6 +48,10 @@ class Repo:
     replacement_gaps: tuple[str, ...] = ()
     integration_kind: str = "azazel"
     parity_status: str = "scaffold-only"
+    executable_parity_status: str = "not-modeled"
+    executable_parity_command: tuple[str, ...] = ()
+    expected_executable_parity_classification: str = "not-modeled"
+    executable_parity_targets: tuple[str, ...] = ()
 
     def manifest(self) -> dict[str, object]:
         return {
@@ -70,6 +75,10 @@ class Repo:
             "replacement_gaps": list(self.replacement_gaps),
             "integration_kind": self.integration_kind,
             "parity_status": self.parity_status,
+            "executable_parity_status": self.executable_parity_status,
+            "executable_parity_command": list(self.executable_parity_command),
+            "expected_executable_parity_classification": self.expected_executable_parity_classification,
+            "executable_parity_targets": list(self.executable_parity_targets),
         }
 
 
@@ -103,6 +112,10 @@ REPOS = [
         "zig-api-drift",
         ("lib:xev", "examples", "benchmarks", "manpage generation"),
         replacement_gaps=("library variants", "generated pkg-config/manpage outputs", "test artifact checks"),
+        executable_parity_status="ready",
+        executable_parity_command=("zig", "build", "--summary", "all"),
+        expected_executable_parity_classification="ok",
+        executable_parity_targets=("module:xev", "exe:xev_probe"),
     ),
     Repo(
         "river",
@@ -315,6 +328,13 @@ def write_overlay(path: Path, repo: Repo) -> None:
                     "pkg_config_libs": list(repo.pkg_config_libs),
                     "replacement_gaps": list(repo.replacement_gaps),
                     "integration_kind": repo.integration_kind,
+                    "executable_parity": {
+                        "status": repo.executable_parity_status,
+                        "command": list(repo.executable_parity_command),
+                        "expected_classification": repo.expected_executable_parity_classification,
+                        "targets": list(repo.executable_parity_targets),
+                        "workdir": ".azazel/parity-work",
+                    },
                 },
             },
             indent=2,
@@ -354,6 +374,97 @@ toolchain: zig: {
         % cue_preferred_lane(repo),
         encoding="utf-8",
     )
+    write_executable_parity_workspace(path, repo)
+
+
+def write_executable_parity_workspace(path: Path, repo: Repo) -> None:
+    if repo.executable_parity_status != "ready":
+        return
+
+    workspace = path / ".azazel" / "parity-work"
+    workspace.mkdir(parents=True, exist_ok=True)
+    generated_spec = workspace / "build_spec.zig"
+    if generated_spec.exists():
+        generated_spec.unlink()
+    azazel_root = Path(__file__).resolve().parents[1]
+    for name in ("build.zig", "schema.cue", "gen_build_spec.sh", "build_spec_test.zig", "compat.zig"):
+        shutil.copy2(azazel_root / name, workspace / name)
+
+    src_dir = workspace / "src"
+    src_dir.mkdir(exist_ok=True)
+    (workspace / ".gitignore").write_text("build_spec.zig\nzig-cache/\nzig-out/\n", encoding="utf-8")
+    if repo.name == "libxev":
+        (workspace / "project.cue").write_text(
+            """package build
+
+toolchain: zig: {
+    lanes: ["0.16"]
+    preferred: "0.16"
+}
+
+xev: #Module & {
+    kind: "module"
+    root: "../../src/main.zig"
+}
+
+xev_probe: #Module & {
+    kind: "exe"
+    root: "src/xev_probe.zig"
+    deps: ["xev"]
+    link: "import"
+}
+""",
+            encoding="utf-8",
+        )
+        (workspace / "export.cue").write_text(
+            """package build
+
+_modules: {
+    "xev": xev
+    "xev_probe": xev_probe
+}
+
+_toolchain: toolchain
+_packages: packages
+_options: options
+
+build: modules: {
+    for k, v in _modules {
+        (k): {
+            kind: v.kind
+            root: v.root
+            deps: v.deps
+            link: v.link
+            pre: v.pre
+            post: v.post
+            pkg_imports: v.pkg_imports
+            build_options: v.build_options
+            build_options_import: v.build_options_import
+            native: v.native
+            optimize: profiles[v.profile].optimize
+        }
+    }
+}
+
+build: toolchain: _toolchain
+build: packages: _packages
+build: options: _options
+""",
+            encoding="utf-8",
+        )
+        (src_dir / "xev_probe.zig").write_text(
+            """const xev = @import("xev");
+
+pub fn main() void {
+    _ = xev.Backend;
+    _ = xev.Loop;
+}
+""",
+            encoding="utf-8",
+        )
+        return
+
+    raise SystemExit(f"repo {repo.name} declares executable parity but has no workspace writer")
 
 
 def select_repos(names: list[str]) -> list[Repo]:
@@ -591,9 +702,28 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                 "pkg_config_libs": list(repo.pkg_config_libs),
                 "replacement_gaps": list(repo.replacement_gaps),
                 "integration_kind": repo.integration_kind,
+                "executable_parity": {
+                    "status": repo.executable_parity_status,
+                    "command": list(repo.executable_parity_command),
+                    "expected_classification": repo.expected_executable_parity_classification,
+                    "targets": list(repo.executable_parity_targets),
+                    "workdir": ".azazel/parity-work",
+                },
             },
         }
-    return json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    azazel = manifest.setdefault("azazel", {})
+    azazel.setdefault(
+        "executable_parity",
+        {
+            "status": repo.executable_parity_status,
+            "command": list(repo.executable_parity_command),
+            "expected_classification": repo.expected_executable_parity_classification,
+            "targets": list(repo.executable_parity_targets),
+            "workdir": ".azazel/parity-work",
+        },
+    )
+    return manifest
 
 
 def parity(root: Path, repos: list[Repo]) -> None:
@@ -628,6 +758,7 @@ def parity(root: Path, repos: list[Repo]) -> None:
                 "required_tools": list(azazel.get("required_tools", [])),
                 "pkg_config_libs": list(azazel.get("pkg_config_libs", [])),
                 "replacement_gaps": list(azazel.get("replacement_gaps", [])),
+                "executable_parity": dict(azazel.get("executable_parity", {})),
             },
             "parity": parity_state,
         }
@@ -637,6 +768,80 @@ def parity(root: Path, repos: list[Repo]) -> None:
             f"(expected {expected}) -> parity {parity_state}"
         )
     (root / "parity-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
+def executable_parity(root: Path, repos: list[Repo]) -> None:
+    report = []
+    for repo in repos:
+        path = ensure_clone(root, repo)
+        write_executable_parity_workspace(path, repo)
+        manifest = load_parity_manifest(path, repo)
+        azazel = manifest["azazel"]
+        executable = dict(azazel.get("executable_parity", {}))
+        status = str(executable.get("status", "not-modeled"))
+        expected = str(executable.get("expected_classification", "not-modeled"))
+        targets = list(executable.get("targets", []))
+        command = list(executable.get("command", []))
+        workdir = path / str(executable.get("workdir", ".azazel/parity-work"))
+
+        if status != "ready":
+            classification = "not-modeled"
+            returncode = 0
+            output = f"no executable Azazel parity target is modeled for {repo.name}"
+        elif not workdir.exists():
+            classification = "missing-parity-workspace"
+            returncode = 127
+            output = f"missing Azazel parity workspace: {workdir}"
+        else:
+            gen = run(["./gen_build_spec.sh"], cwd=workdir, check=False)
+            if gen.returncode != 0:
+                classification = classify_failure(gen.stdout, gen.returncode)
+                returncode = gen.returncode
+                output = gen.stdout[-4000:]
+            else:
+                zig = zig_for(repo.build_zig)
+                if not zig:
+                    classification = "missing-toolchain"
+                    returncode = 127
+                    output = f"no Zig binary found for {repo.build_zig}"
+                else:
+                    resolved_command = command_with_zig(command, zig)
+                    env = os.environ.copy()
+                    safe_name = repo.name.replace("-", "_")
+                    env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(root / f".zig-cache-exec-{safe_name}-{repo.build_zig}"))
+                    env.setdefault("ZIG_LOCAL_CACHE_DIR", str(root / f".zig-cache-local-exec-{safe_name}-{repo.build_zig}"))
+                    result = subprocess.run(
+                        resolved_command,
+                        cwd=workdir,
+                        env=env,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        check=False,
+                    )
+                    classification = classify_failure(result.stdout, result.returncode)
+                    returncode = result.returncode
+                    output = (gen.stdout + result.stdout)[-4000:]
+                    command = resolved_command
+
+        matches = classification == expected
+        report.append(
+            {
+                "name": repo.name,
+                "status": status,
+                "targets": targets,
+                "workdir": str(workdir.relative_to(path)) if workdir.is_relative_to(path) else str(workdir),
+                "command": command,
+                "zig": repo.build_zig,
+                "returncode": returncode,
+                "classification": classification,
+                "expected_classification": expected,
+                "matches_expected": matches,
+                "output": output,
+            }
+        )
+        print(f"{repo.name}: executable parity {classification} (expected {expected})")
+    (root / "executable-parity-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
 def classify_failure(output: str, returncode: int) -> str:
@@ -680,6 +885,7 @@ def main() -> None:
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--audit", action="store_true")
     parser.add_argument("--parity", action="store_true")
+    parser.add_argument("--executable-parity", action="store_true")
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--doctor", action="store_true")
     parser.add_argument("--push", action="store_true")
@@ -692,7 +898,7 @@ def main() -> None:
         "--repo",
         action="append",
         default=[],
-        help="limit prepare/audit/parity/build/doctor to a repo name, upstream owner/name, or fork owner/name; repeatable",
+        help="limit prepare/audit/parity/executable-parity/build/doctor to a repo name, upstream owner/name, or fork owner/name; repeatable",
     )
     args = parser.parse_args()
 
@@ -706,12 +912,21 @@ def main() -> None:
         audit(root, repos)
     if args.parity:
         parity(root, repos)
+    if args.executable_parity:
+        executable_parity(root, repos)
     if args.build:
         run_build(root, repos)
     if args.doctor:
         doctor(root, repos)
-    if not args.prepare and not args.audit and not args.parity and not args.build and not args.doctor:
-        parser.error("choose --prepare, --audit, --parity, --build, and/or --doctor")
+    if (
+        not args.prepare
+        and not args.audit
+        and not args.parity
+        and not args.executable_parity
+        and not args.build
+        and not args.doctor
+    ):
+        parser.error("choose --prepare, --audit, --parity, --executable-parity, --build, and/or --doctor")
 
 
 if __name__ == "__main__":
