@@ -179,6 +179,10 @@ REPOS = [
         "zig-api-drift",
         ("lib:vaxis", "example matrix", "installable demos", "tests"),
         replacement_gaps=("generated Unicode tables", "example matrix target selection", "installable demos"),
+        executable_parity_status="ready",
+        executable_parity_command=("zig", "build", "--summary", "all"),
+        expected_executable_parity_classification="ok",
+        executable_parity_targets=("module:vaxis", "exe:vaxis_probe", "package:zigimg", "package:uucode"),
     ),
     Repo(
         "capy",
@@ -464,7 +468,151 @@ pub fn main() void {
         )
         return
 
+    if repo.name == "libvaxis":
+        (workspace / "project.cue").write_text(
+            """package build
+
+toolchain: zig: {
+    lanes: ["0.16"]
+    preferred: "0.16"
+}
+
+packages: {
+    zigimg: {
+        path: "../../zig-pkg/zigimg-0.1.0-8_eo2oyaFwBZwJpmqPkCfVXWBrHcqbYwmrp1I6bTD3lI"
+    }
+    uucode: {
+        path: "../../zig-pkg/uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA"
+        lazy: true
+    }
+}
+
+vaxis: #Module & {
+    kind: "module"
+    root: "../../src/main.zig"
+    pkg_imports: [
+        {
+            alias: "zigimg"
+            package: "zigimg"
+            module: "zigimg"
+        },
+        {
+            alias: "uucode"
+            package: "uucode"
+            module: "uucode"
+        },
+    ]
+}
+
+vaxis_probe: #Module & {
+    kind: "exe"
+    root: "src/vaxis_probe.zig"
+    deps: ["vaxis"]
+    link: "import"
+}
+""",
+            encoding="utf-8",
+        )
+        write_standard_export(workspace, ("vaxis", "vaxis_probe"))
+        write_workspace_zon(
+            workspace,
+            ".vaxis_azazel_parity",
+            {
+                "zigimg": "../../zig-pkg/zigimg-0.1.0-8_eo2oyaFwBZwJpmqPkCfVXWBrHcqbYwmrp1I6bTD3lI",
+                "uucode": "../../zig-pkg/uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA",
+            },
+        )
+        (src_dir / "vaxis_probe.zig").write_text(
+            """const vaxis = @import("vaxis");
+
+pub fn main() void {
+    _ = vaxis.Vaxis;
+    _ = vaxis.Key;
+    _ = vaxis.zigimg.Image;
+}
+""",
+            encoding="utf-8",
+        )
+        return
+
     raise SystemExit(f"repo {repo.name} declares executable parity but has no workspace writer")
+
+
+def write_standard_export(workspace: Path, modules: tuple[str, ...]) -> None:
+    module_lines = "".join(f'    "{name}": {name}\n' for name in modules)
+    (workspace / "export.cue").write_text(
+        """package build
+
+_modules: {
+"""
+        + module_lines
+        + """}
+
+_toolchain: toolchain
+_packages: packages
+_options: options
+
+build: modules: {
+    for k, v in _modules {
+        (k): {
+            kind: v.kind
+            root: v.root
+            deps: v.deps
+            link: v.link
+            pre: v.pre
+            post: v.post
+            pkg_imports: v.pkg_imports
+            build_options: v.build_options
+            build_options_import: v.build_options_import
+            native: v.native
+            optimize: profiles[v.profile].optimize
+        }
+    }
+}
+
+build: toolchain: _toolchain
+build: packages: _packages
+build: options: _options
+""",
+        encoding="utf-8",
+    )
+
+
+def write_workspace_zon(workspace: Path, package_name: str, deps: dict[str, str]) -> None:
+    lines = [
+        ".{",
+        f"    .name = {package_name},",
+        '    .version = "0.0.0",',
+        "    .fingerprint = 0x556db0b97b71fd4c,",
+        "    .dependencies = .{",
+    ]
+    for name, path in deps.items():
+        lines.extend(
+            [
+                f"        .{name} = .{{",
+                f'            .path = "{path}",',
+                "        },",
+            ]
+        )
+    lines.extend(
+        [
+            "    },",
+            "    .paths = .{",
+            '        "build.zig",',
+            '        "build.zig.zon",',
+            '        "build_spec_test.zig",',
+            '        "compat.zig",',
+            '        "schema.cue",',
+            '        "project.cue",',
+            '        "export.cue",',
+            '        "gen_build_spec.sh",',
+            '        "src",',
+            "    },",
+            "}",
+            "",
+        ]
+    )
+    (workspace / "build.zig.zon").write_text("\n".join(lines), encoding="utf-8")
 
 
 def select_repos(names: list[str]) -> list[Repo]:
