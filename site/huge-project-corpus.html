@@ -46,12 +46,20 @@ expose in Azazel and Zaza.</p>
 <code>tools/huge_corpus.py --audit</code> to record the host Zig baseline,
 <code>tools/huge_corpus.py --doctor</code> to check local toolchains and host prerequisites,
 <code>tools/huge_corpus.py --build</code> to prove the upstream build with the declared
-toolchain, and <code>tools/huge_corpus.py --parity</code> to emit <code>parity-results.json</code>.
+toolchain, <code>tools/huge_corpus.py --parity</code> to emit <code>parity-results.json</code>, and
+<code>tools/huge_corpus.py --executable-parity</code> to run modeled Azazel target slices.
 Build reports include first target slices, replacement gaps, required tools,
 pkg-config probes, and a concrete next action. Parity reports compare the
-observed baseline classification with each repo's manifest and keep Azazel
-marked <code>scaffold-only</code> until a declared target slice is actually translated and
-runnable.</p>
+observed baseline classification with each repo's manifest. Executable parity
+reports regenerate Azazel's <code>build_spec.zig</code> inside <code>.azazel/parity-work/</code> and
+run the generated Zig build for any target slice marked ready.</p>
+
+<p>The first executable Azazel slice is <code>libxev</code>: <code>module:xev</code> points at upstream
+<code>src/main.zig</code>, and a generated <code>exe:xev_probe</code> imports it through Azazel's
+<code>link: "import"</code> graph. That slice compiles on Zig <code>0.16.0</code>. It proves a real
+Azazel graph can compile upstream source, but it does not claim full libxev
+replacement; library variants, pkg-config/manpage generation, benchmarks,
+examples, and artifact checks remain tracked gaps.</p>
 
 <p>As of the 2026-07-31 proof run, <code>libxev</code>, <code>libvaxis</code>, and <code>zig-gamedev</code> build
 successfully with their declared Zig lanes. The other corpus projects are
