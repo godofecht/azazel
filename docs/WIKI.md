@@ -1287,11 +1287,14 @@ expose in Azazel and Zaza.
 
 Use `tools/huge_corpus.py --prepare` to create the fork overlays,
 `tools/huge_corpus.py --audit` to record the host Zig baseline,
+`tools/huge_corpus.py --doctor` to check local toolchains and host prerequisites,
 `tools/huge_corpus.py --build` to prove the upstream build with the declared
 toolchain, and `tools/huge_corpus.py --parity` to emit `parity-results.json`.
-Parity reports compare the observed baseline classification with each repo's
-manifest and keep Azazel marked `scaffold-only` until a declared target slice is
-actually translated and runnable.
+Build reports include first target slices, replacement gaps, required tools,
+pkg-config probes, and a concrete next action. Parity reports compare the
+observed baseline classification with each repo's manifest and keep Azazel
+marked `scaffold-only` until a declared target slice is actually translated and
+runnable.
 
 As of the 2026-07-31 proof run, `libxev`, `libvaxis`, and `zig-gamedev` build
 successfully with their declared Zig lanes. The other corpus projects are

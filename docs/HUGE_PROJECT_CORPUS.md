@@ -16,6 +16,7 @@ produce build/parity-readiness reports for the corpus:
 ```sh
 tools/huge_corpus.py --prepare --push
 tools/huge_corpus.py --audit
+tools/huge_corpus.py --doctor
 tools/huge_corpus.py --build
 tools/huge_corpus.py --parity
 tools/huge_corpus.py --audit --repo zls --repo microzig
@@ -83,14 +84,22 @@ translate and run the declared target slice.
 Run:
 
 ```sh
+tools/huge_corpus.py --doctor
 tools/huge_corpus.py --build
 tools/huge_corpus.py --build --repo libxev --repo zig-gamedev
 ```
 
-The runner resolves the manifest's declared Zig toolchain, runs the repo's
-actual build command, and writes `build-results.json` in the clone root. The
-report is intentionally separate from parity: a repo can build with its upstream
-`build.zig` while Azazel remains `scaffold-only`.
+`--doctor` checks the local machine prerequisites declared by each manifest:
+toolchain path, required host tools, and pkg-config libraries. It writes
+`doctor-results.json` in the clone root and gives a next action before running a
+full build.
+
+`--build` resolves the manifest's declared Zig toolchain, runs the repo's actual
+build command, and writes `build-results.json` in the clone root. The report is
+intentionally separate from parity: a repo can build with its upstream
+`build.zig` while Azazel remains `scaffold-only`. Each build result also records
+the first target slice, known replacement gaps, required tools, pkg-config
+probes, and the next action for moving toward replacement parity.
 
 Fresh proof run on 2026-07-31 from `/tmp/azazel-huge-proof`:
 
@@ -110,6 +119,19 @@ Current Azazel benefit is reproducible toolchain/build diagnostics plus fork
 metadata. Full build replacement is not claimed yet. Zaza is not inserted into
 these pure-Zig upstream build graphs unless a repo has a C/C++ target slice that
 we explicitly model.
+
+## Doctor Output
+
+`tools/huge_corpus.py --doctor` answers "can this host run the declared proof
+command?" without cloning or compiling. Useful statuses:
+
+| Field | Meaning |
+| --- | --- |
+| `toolchain.found` | The declared Zig binary can be resolved from the local toolchain root or an override env var. |
+| `required_tools` | Host commands such as `pkg-config` or `wayland-scanner`. |
+| `pkg_config_libs` | Libraries probed through `pkg-config --exists`. |
+| `replacement_gaps` | Build-graph features Azazel/Zaza must model before claiming replacement value. |
+| `next_action` | Concrete next step for the repo's current state. |
 
 ## Current Audit Results
 
