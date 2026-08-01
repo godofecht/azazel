@@ -11,6 +11,7 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
+  <span class="version">v0.1.0</span>
   <div class="section-label">Guide</div>
   <a href="index.html">Overview</a>
   <a href="pipeline.html">The Pipeline</a>
@@ -20,6 +21,8 @@
   <a href="schema-reference.html">Schema Reference</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="examples.html">Examples</a>
+  <a href="editor-support.html">Editor Support</a>
+  <a href="huge-project-corpus.html">Huge Corpus</a>
   <a href="troubleshooting.html">Troubleshooting</a>
   <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
@@ -39,15 +42,17 @@
 <table>
 <thead><tr><th>Tool</th><th>Version</th><th>Why</th></tr></thead>
 <tbody>
-<tr><td>Zig</td><td>0.14.1 or 0.15.2</td><td>builds everything</td></tr>
+<tr><td>Zig</td><td>0.14.x, 0.15.x or 0.16.x</td><td>supported <code>std.Build</code> lanes</td></tr>
 <tr><td>CUE</td><td>v0.16.0</td><td>validates and exports the config</td></tr>
 <tr><td>Python 3</td><td>any 3.x</td><td><code>gen_build_spec.sh</code> uses it to emit Zig from CUE's JSON</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>Those two Zig versions are the tested ones. <code>build.zig</code> uses the
-<code>root_module</code> API, so expect older releases to fail at configuration.</p>
+<p>Azazel is maintained by Zig minor-version lane because <code>std.Build</code> changes
+between releases. Project configs can narrow the supported lanes with
+<code>toolchain.zig.lanes</code>; the generated <code>build_spec.zig</code> records that contract and
+<code>build.zig</code> rejects an unsupported host lane before compiling modules.</p>
 
 <p>macOS:</p>
 
@@ -64,8 +69,9 @@ cd azazel
 ./setup.sh</code></pre>
 
 <p><code>setup.sh</code> checks the toolchain, generates <code>build_spec.zig</code>, builds, and runs
-the tests. It is safe to run repeatedly and exits non-zero on the first
-failure.</p>
+the tests. It uses Zig-version-specific cache directories by default, so
+switching between the 0.14/0.15/0.16 lanes does not reuse a stale build runner.
+It is safe to run repeatedly and exits non-zero on the first failure.</p>
 
 <pre><code>$ ./setup.sh
 
@@ -104,6 +110,7 @@ Done.
 ./setup.sh --examples                also build and test everything in examples/
 ZIG=/path/to/zig ./setup.sh          use a specific Zig binary
 CUE=/path/to/cue ./setup.sh          use a specific CUE binary
+ZIG_CACHE_DIR=/tmp/azazel-cache ./setup.sh
 ./setup.sh --help</code></pre>
 
 <p>If a tool is missing, it says so and points at an installer:</p>

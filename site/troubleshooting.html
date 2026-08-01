@@ -11,6 +11,7 @@
 <nav>
   <a href="index.html" class="logo">azazel</a>
   <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
+  <span class="version">v0.1.0</span>
   <div class="section-label">Guide</div>
   <a href="index.html">Overview</a>
   <a href="pipeline.html">The Pipeline</a>
@@ -20,6 +21,8 @@
   <a href="schema-reference.html">Schema Reference</a>
   <a href="code-generation.html">Code Generation</a>
   <a href="examples.html">Examples</a>
+  <a href="editor-support.html">Editor Support</a>
+  <a href="huge-project-corpus.html">Huge Corpus</a>
   <a href="troubleshooting.html" class="active">Troubleshooting</a>
   <a href="file-reference.html">File Reference</a>
   <div class="spacer"></div>
@@ -115,8 +118,9 @@ some instances are incomplete; use the -c flag to show errors or -c=false to all
 app.flags: field not allowed:
     ./project.cue:8:2</code></pre>
 
-<p><code>#Module</code> is closed. Only <code>kind</code>, <code>root</code>, <code>deps</code> and <code>profile</code> exist. If you
-need something else, add it to <code>build.zig</code> directly.</p>
+<p><code>#Module</code> is closed. Only <code>kind</code>, <code>root</code>, <code>deps</code>, <code>profile</code>, <code>link</code>, and <code>post</code>
+exist. If you need something else, add it to the schema and generator, or wire
+it into <code>build.zig</code> directly.</p>
 
 <h3 id="conflicting-values-x-and-y"><code>conflicting values "X" and "Y"</code></h3>
 
@@ -146,17 +150,19 @@ not, because it has no executable that links a shared library.</p>
 <code>./gen_build_spec.sh</code> after every edit to <code>project.cue</code>, <code>export.cue</code> or
 <code>schema.cue</code>.</p>
 
-<h3 id="a-zig-version-other-than-0141-or-0152">A Zig version other than 0.14.1 or 0.15.2</h3>
+<h3 id="a-zig-version-outside-the-declared-lanes">A Zig version outside the declared lanes</h3>
 
-<p><code>build.zig</code> uses <code>b.createModule</code> with <code>.root_module</code>, and <code>addLibrary</code> with
-an explicit <code>linkage</code>. Older releases spell both differently, so expect
-configuration errors below 0.14. <code>setup.sh</code> prints a note for anything
-outside 0.14.x and 0.15.x but does not stop you.</p>
+<p>Azazel's generated spec declares supported lanes under <code>toolchain.zig.lanes</code>.
+The default lanes are <code>0.14</code>, <code>0.15</code>, and <code>0.16</code>. <code>build.zig</code> checks the current
+compiler against that list at compile time and stops with a toolchain error if
+the lane is unsupported.</p>
 
-<p>Only 0.14.1 and 0.15.2 are tested.</p>
+<p>This is deliberate: Zig build APIs move quickly, and a clean lane error is more
+useful than a later failure inside <code>std.Build</code>, a dependency build script, or a
+generated source step.</p>
 
 <div class="page-footer">
-  <a href="examples.html">&larr; Examples</a>
+  <a href="huge-project-corpus.html">&larr; Huge Corpus</a>
   <a href="file-reference.html">Next: File Reference &rarr;</a>
 </div>
 

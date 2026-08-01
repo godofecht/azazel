@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor Support · azazel</title>
+<meta name="description" content="VS Code language features and the stdio language server prototype.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav>
+  <a href="index.html" class="logo">azazel</a>
+  <div class="tagline">A deterministic build configuration layer for Zig, powered by CUE</div>
+  <span class="version">v0.1.0</span>
+  <div class="section-label">Guide</div>
+  <a href="index.html">Overview</a>
+  <a href="pipeline.html">The Pipeline</a>
+  <a href="installation.html">Installation</a>
+  <a href="quickstart.html">Quickstart</a>
+  <div class="section-label">Reference</div>
+  <a href="schema-reference.html">Schema Reference</a>
+  <a href="code-generation.html">Code Generation</a>
+  <a href="examples.html">Examples</a>
+  <a href="editor-support.html" class="active">Editor Support</a>
+  <a href="huge-project-corpus.html">Huge Corpus</a>
+  <a href="troubleshooting.html">Troubleshooting</a>
+  <a href="file-reference.html">File Reference</a>
+  <div class="spacer"></div>
+  <div class="nav-footer">
+    <a href="https://github.com/godofecht/azazel">GitHub</a>
+    <a href="https://github.com/godofecht/zaza">Zaza</a>
+    <a href="https://github.com/godofecht/danzig">Danzig</a>
+  </div>
+</nav>
+<main>
+
+<h1 id="editor-support">Editor Support</h1>
+
+<p><code>ide/vscode</code> contains a dependency-free VS Code extension for authoring
+<code>project.cue</code> files. It provides CUE syntax highlighting, inline <code>cue export -e
+build</code> diagnostics, and two azazel graph warnings that CUE cannot express:</p>
+
+<ul>
+<li>a <code>deps</code> string that names no module in <code>project.cue</code></li>
+<li>a module that is absent from <code>export.cue</code>'s <code>_modules</code> map</li>
+</ul>
+
+<p>It also provides completion for <code>#Module</code> fields and enum values, hover help for
+fields and enum values, go-to-definition from a dependency string to its module
+declaration, and the <code>Azazel: Generate build_spec</code> command.</p>
+
+<p>Open <code>ide/vscode</code> in VS Code and press F5 to try it from source. The shared
+language feature logic is also exposed by the stdio LSP prototype in
+<code>ide/server/server.js</code>; run <code>node ide/server/test-client.js</code> for a smoke test.</p>
+
+<div class="page-footer">
+  <a href="examples.html">&larr; Examples</a>
+  <a href="huge-project-corpus.html">Next: Huge Corpus &rarr;</a>
+</div>
+
+</main>
+</body>
+</html>
