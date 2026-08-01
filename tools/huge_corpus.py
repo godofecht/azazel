@@ -42,6 +42,9 @@ class Repo:
     expected_classification: str
     first_targets: tuple[str, ...]
     system_deps: tuple[str, ...] = ()
+    required_tools: tuple[str, ...] = ()
+    pkg_config_libs: tuple[str, ...] = ()
+    replacement_gaps: tuple[str, ...] = ()
     integration_kind: str = "azazel"
     parity_status: str = "scaffold-only"
 
@@ -62,6 +65,9 @@ class Repo:
             "expected_baseline_classification": self.expected_classification,
             "first_targets": list(self.first_targets),
             "system_deps": list(self.system_deps),
+            "required_tools": list(self.required_tools),
+            "pkg_config_libs": list(self.pkg_config_libs),
+            "replacement_gaps": list(self.replacement_gaps),
             "integration_kind": self.integration_kind,
             "parity_status": self.parity_status,
         }
@@ -81,6 +87,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:zls", "tests", "generated version data"),
+        replacement_gaps=("exact dev-toolchain window", "package dependencies", "generated version data"),
     ),
     Repo(
         "libxev",
@@ -95,6 +102,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-api-drift",
         ("lib:xev", "examples", "benchmarks", "manpage generation"),
+        replacement_gaps=("library variants", "generated pkg-config/manpage outputs", "test artifact checks"),
     ),
     Repo(
         "river",
@@ -110,6 +118,9 @@ REPOS = [
         "zig-toolchain",
         ("exe:river", "generated protocol modules", "C/system link metadata"),
         ("pkg-config", "wayland", "wlroots", "libevdev", "xkbcommon", "pixman"),
+        ("pkg-config", "wayland-scanner"),
+        ("wayland-scanner",),
+        ("system dependency preflight", "generated protocol modules", "pkg-config link metadata"),
     ),
     Repo(
         "mach",
@@ -124,6 +135,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("module:mach", "examples", "generated Vulkan bindings", "asset steps"),
+        replacement_gaps=("custom Zig toolchain resolver", "generated Vulkan bindings", "asset pipeline"),
     ),
     Repo(
         "microzig",
@@ -138,6 +150,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("workspace packages", "board ports", "nested build packages", "tools"),
+        replacement_gaps=("nested workspaces", "dependency archive handling", "embedded target slices"),
     ),
     Repo(
         "libvaxis",
@@ -152,6 +165,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-api-drift",
         ("lib:vaxis", "example matrix", "installable demos", "tests"),
+        replacement_gaps=("generated Unicode tables", "example matrix target selection", "installable demos"),
     ),
     Repo(
         "capy",
@@ -166,6 +180,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("lib:capy", "platform UI backend selection", "examples"),
+        replacement_gaps=("transitive package format diagnostics", "platform UI backend metadata"),
     ),
     Repo(
         "zig-gamedev",
@@ -180,6 +195,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-api-drift",
         ("package modules", "asset-heavy examples", "optional dependency selection"),
+        replacement_gaps=("C/C++ dependency graph slices", "asset-heavy example selection", "framework/link metadata"),
     ),
 ]
 
@@ -252,16 +268,17 @@ def ensure_clone(root: Path, repo: Repo) -> Path:
 
 def checkout_branch(path: Path) -> None:
     current = run(["git", "branch", "--show-current"], cwd=path).stdout.strip()
+    existing = run(["git", "branch", "--list", BRANCH], cwd=path).stdout.strip()
+    remote = run(["git", "fetch", "origin", f"{BRANCH}:refs/remotes/origin/{BRANCH}"], cwd=path, check=False)
     if current != BRANCH:
-        existing = run(["git", "branch", "--list", BRANCH], cwd=path).stdout.strip()
         if existing:
             run(["git", "checkout", BRANCH], cwd=path)
+        elif remote.returncode == 0:
+            run(["git", "checkout", "-b", BRANCH, f"origin/{BRANCH}"], cwd=path)
         else:
-            remote = run(["git", "fetch", "origin", f"{BRANCH}:refs/remotes/origin/{BRANCH}"], cwd=path, check=False)
-            if remote.returncode == 0:
-                run(["git", "checkout", "-b", BRANCH, f"origin/{BRANCH}"], cwd=path)
-            else:
-                run(["git", "checkout", "-b", BRANCH], cwd=path)
+            run(["git", "checkout", "-b", BRANCH], cwd=path)
+    if remote.returncode == 0:
+        run(["git", "merge", "--ff-only", f"origin/{BRANCH}"], cwd=path)
 
 
 def refresh_branch_base(path: Path) -> None:
@@ -294,6 +311,9 @@ def write_overlay(path: Path, repo: Repo) -> None:
                     "status": repo.parity_status,
                     "first_targets": list(repo.first_targets),
                     "system_deps": list(repo.system_deps),
+                    "required_tools": list(repo.required_tools),
+                    "pkg_config_libs": list(repo.pkg_config_libs),
+                    "replacement_gaps": list(repo.replacement_gaps),
                     "integration_kind": repo.integration_kind,
                 },
             },
@@ -319,6 +339,7 @@ Current focus:
 - native link metadata
 - corpus parity reporting
 - build-proof reporting
+- actionable build diagnostics
 """,
         encoding="utf-8",
     )
@@ -398,6 +419,98 @@ def command_with_zig(command: list[str], zig: str) -> list[str]:
     return command
 
 
+def pkg_config_available(name: str) -> bool:
+    if not shutil.which("pkg-config"):
+        return False
+    return subprocess.run(
+        ["pkg-config", "--exists", name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    ).returncode == 0
+
+
+def doctor_entry(repo: Repo) -> dict[str, object]:
+    zig = zig_for(repo.build_zig)
+    tools = [
+        {
+            "name": tool,
+            "path": shutil.which(tool) or "",
+            "found": shutil.which(tool) is not None,
+        }
+        for tool in repo.required_tools
+    ]
+    pkg_config = [
+        {
+            "name": lib,
+            "found": pkg_config_available(lib),
+        }
+        for lib in repo.pkg_config_libs
+    ]
+    ready = bool(zig) and all(tool["found"] for tool in tools) and all(lib["found"] for lib in pkg_config)
+    missing = []
+    if not zig:
+        missing.append(f"zig:{repo.build_zig}")
+    missing.extend(f"tool:{tool['name']}" for tool in tools if not tool["found"])
+    missing.extend(f"pkg-config:{lib['name']}" for lib in pkg_config if not lib["found"])
+    return {
+        "name": repo.name,
+        "ready": ready,
+        "missing": missing,
+        "toolchain": {
+            "version": repo.build_zig,
+            "path": zig,
+            "found": bool(zig),
+        },
+        "required_tools": tools,
+        "pkg_config_libs": pkg_config,
+        "system_deps": list(repo.system_deps),
+        "first_targets": list(repo.first_targets),
+        "replacement_gaps": list(repo.replacement_gaps),
+        "next_action": next_action(
+            repo,
+            repo.expected_build_classification if ready else "doctor-blocked",
+            "",
+        ),
+    }
+
+
+def doctor(root: Path, repos: list[Repo]) -> None:
+    report = [doctor_entry(repo) for repo in repos]
+    for entry in report:
+        status = "ready" if entry["ready"] else "blocked"
+        missing = ", ".join(entry["missing"]) if entry["missing"] else "none"
+        print(f"{entry['name']}: doctor {status}; missing: {missing}")
+    (root / "doctor-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
+def next_action(repo: Repo, classification: str, output: str) -> str:
+    if classification == "ok":
+        if repo.parity_status == "ready":
+            return "run the declared Azazel parity command and compare artifacts"
+        return "implement the first Azazel target slice: " + ", ".join(repo.first_targets)
+    if classification == "doctor-blocked":
+        return "install or configure the missing toolchain/tools before running build proof"
+    if classification == "zig-toolchain":
+        if repo.name == "zls":
+            return "pin an accepted ZLS 0.17-dev build or track the ZLS toolchain window before parity work"
+        return "resolve the project Zig lane before modeling build graph parity"
+    if classification == "missing-toolchain":
+        return f"install {repo.build_zig} or set AZAZEL_ZIG_{''.join(ch for ch in repo.build_zig.upper() if ch.isalnum())}"
+    if classification == "system-dependency":
+        deps = ", ".join(repo.system_deps or repo.required_tools)
+        return f"install host system dependencies, then rerun --doctor and --build: {deps}"
+    if classification == "dependency-fetch":
+        return "fix dependency archive/cache fetching before translating the target slice"
+    if classification == "dependency-format":
+        return "patch or pin the transitive dependency to a package format accepted by the declared Zig lane"
+    if classification == "zig-api-drift":
+        return "try the next Zig lane or pin upstream dependencies before claiming replacement parity"
+    if classification == "missing-lfs-content":
+        return "fetch Git LFS content or refresh the integration branch from upstream"
+    return "inspect build output and add a stable classification before continuing"
+
+
 def run_build(root: Path, repos: list[Repo]) -> None:
     report = []
     for repo in repos:
@@ -439,6 +552,10 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 "azazel_status": repo.parity_status,
                 "first_targets": list(repo.first_targets),
                 "system_deps": list(repo.system_deps),
+                "required_tools": list(repo.required_tools),
+                "pkg_config_libs": list(repo.pkg_config_libs),
+                "replacement_gaps": list(repo.replacement_gaps),
+                "next_action": next_action(repo, classification, output),
                 "output": output,
             }
         )
@@ -470,6 +587,9 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                 "status": repo.parity_status,
                 "first_targets": list(repo.first_targets),
                 "system_deps": list(repo.system_deps),
+                "required_tools": list(repo.required_tools),
+                "pkg_config_libs": list(repo.pkg_config_libs),
+                "replacement_gaps": list(repo.replacement_gaps),
                 "integration_kind": repo.integration_kind,
             },
         }
@@ -505,6 +625,9 @@ def parity(root: Path, repos: list[Repo]) -> None:
                 "status": azazel_status,
                 "first_targets": list(azazel.get("first_targets", [])),
                 "system_deps": list(azazel.get("system_deps", [])),
+                "required_tools": list(azazel.get("required_tools", [])),
+                "pkg_config_libs": list(azazel.get("pkg_config_libs", [])),
+                "replacement_gaps": list(azazel.get("replacement_gaps", [])),
             },
             "parity": parity_state,
         }
@@ -536,7 +659,11 @@ def classify_failure(output: str, returncode: int) -> str:
         or "expected ')', found '.'" in output
     ):
         return "zig-toolchain"
-    if "unable to discover remote git server capabilities" in output or "Could not resolve host" in output:
+    if (
+        "unable to discover remote git server capabilities" in output
+        or "Could not resolve host" in output
+        or "invalid HTTP response" in output
+    ):
         return "dependency-fetch"
     if "failed to create temporary zip file" in output:
         return "dependency-fetch"
@@ -554,6 +681,7 @@ def main() -> None:
     parser.add_argument("--audit", action="store_true")
     parser.add_argument("--parity", action="store_true")
     parser.add_argument("--build", action="store_true")
+    parser.add_argument("--doctor", action="store_true")
     parser.add_argument("--push", action="store_true")
     parser.add_argument(
         "--refresh-base",
@@ -564,7 +692,7 @@ def main() -> None:
         "--repo",
         action="append",
         default=[],
-        help="limit prepare/audit/parity/build to a repo name, upstream owner/name, or fork owner/name; repeatable",
+        help="limit prepare/audit/parity/build/doctor to a repo name, upstream owner/name, or fork owner/name; repeatable",
     )
     args = parser.parse_args()
 
@@ -580,8 +708,10 @@ def main() -> None:
         parity(root, repos)
     if args.build:
         run_build(root, repos)
-    if not args.prepare and not args.audit and not args.parity and not args.build:
-        parser.error("choose --prepare, --audit, --parity, and/or --build")
+    if args.doctor:
+        doctor(root, repos)
+    if not args.prepare and not args.audit and not args.parity and not args.build and not args.doctor:
+        parser.error("choose --prepare, --audit, --parity, --build, and/or --doctor")
 
 
 if __name__ == "__main__":
