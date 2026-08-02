@@ -95,16 +95,20 @@ For repos with a modeled target slice, the runner creates an isolated
 repo's declared Zig toolchain, and runs the Azazel-generated build command.
 Repos without a modeled slice report `not-modeled` instead of fake success.
 
-The first executable slice is `libxev`:
+The first executable slices are:
 
 - `module:xev` points at upstream `src/main.zig`
 - `exe:xev_probe` imports the module through Azazel's `link: "import"` graph
 - Zig `0.16.0` compiles the generated Azazel build successfully
+- `module:vaxis` points at upstream `src/main.zig`
+- `exe:vaxis_probe` imports the module through Azazel's `link: "import"` graph
+- `package:zigimg` and `package:uucode` are wired through local `build.zig.zon`
+  path dependencies in the parity workspace
 
 This proves an Azazel target slice can execute against upstream source. It does
-not claim full libxev build replacement yet; library variants, generated
-pkg-config/manpage outputs, benchmarks, examples, and artifact checks remain
-tracked replacement gaps.
+not claim full project build replacement yet; library variants, generated
+pkg-config/manpage outputs, generated Unicode tables, benchmarks, examples, and
+artifact checks remain tracked replacement gaps.
 
 ## Build Proof Reports
 
@@ -152,6 +156,7 @@ Current executable Azazel parity slices:
 | Project | Slice | Result | Boundary |
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
+| `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `ok` on Zig `0.16.0` | Proves package-backed import-mode module compilation through Azazel; generated Unicode table options and example/test matrices are still future work. |
 
 ## Doctor Output
 
@@ -184,7 +189,7 @@ command?" without cloning or compiling. Useful statuses:
 ## Azazel Gaps Exposed
 
 - Toolchain constraints: lane support now exists for `0.14`, `0.15`, and `0.16`; exact/custom toolchains still need richer metadata.
-- Package dependencies: package module imports now exist; dependency declarations, hashes, paths, lazy dependencies, and failures still need richer modeling.
+- Package dependencies: package module imports now exist, and executable corpus parity now covers local path dependencies; URL/hash fetch policy, lazy dependency options, and failure diagnostics still need richer modeling.
 - Named modules without artifacts: `kind: "module"` now represents `b.addModule` and pure module imports.
 - Build options: typed booleans, strings, and `u32` defaults now exist; enums/lists still need modeling.
 - Generated sources: pre-build command nodes now exist; `addRunArtifact` output-file tracking still needs modeling.
@@ -198,11 +203,11 @@ command?" without cloning or compiling. Useful statuses:
 - Post-build commands need to compose with generated artifacts and installed artifacts across CMake and Zig branches.
 - System-command enablement should produce precise errors naming the target and command that was skipped.
 - C/C++ integration needs parity with Zig build metadata: include paths, link libraries, frameworks, and per-config commands.
-- Large repo support now has per-repo parity manifests and the first executable Azazel parity slice for `libxev`; the next step is to expand slice coverage one repo at a time.
+- Large repo support now has per-repo parity manifests and executable Azazel parity slices for `libxev` and `libvaxis`; the next step is to expand slice coverage one repo at a time.
 
 ## Next Targets
 
 1. Add enum/list build options.
-2. Add package dependency declarations/hashes and dependency-fetch diagnostics.
+2. Add URL/hash package dependency declarations and dependency-fetch diagnostics beyond local path parity.
 3. Add generated-file/run-artifact output tracking.
-4. Expand executable Azazel parity from the `libxev` module probe to library artifacts, tests, examples, and additional repos.
+4. Expand executable Azazel parity from module/package probes to library artifacts, tests, examples, and additional repos.
