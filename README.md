@@ -187,6 +187,8 @@ The corpus runner also has an executable parity lane:
 `tools/huge_corpus.py --executable-parity` regenerates Azazel's build spec in a
 repo-local `.azazel/parity-work/` workspace and runs modeled target slices
 against upstream source. The first ready slice is the `libxev` module probe.
+`libvaxis` also has a package-backed slice that resolves local `zigimg` and
+`uucode` path dependencies through the generated parity workspace.
 
 ## Editor support
 
