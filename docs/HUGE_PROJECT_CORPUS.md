@@ -14,6 +14,7 @@ Forks live under `godofecht/*`; integration branches use
 produce build/parity-readiness reports for the corpus:
 
 ```sh
+tools/huge_corpus.py --plan --expect-count 10
 tools/huge_corpus.py --prepare --push
 tools/huge_corpus.py --audit
 tools/huge_corpus.py --doctor
@@ -35,6 +36,8 @@ tools/huge_corpus.py --audit --repo zls --repo microzig
 | `rockorager/libvaxis` | TUI library with many examples and test/install steps | `zig build --help` fails on Zig 0.14 format/build API incompatibility | Example matrix, installable demos, tests, host Zig compatibility diagnostics |
 | `capy-ui/capy` | Native UI toolkit with custom build helper | Fails fast: requires Zig 0.14.1 exactly | Minimum/exact Zig version constraints, platform UI backends, custom helper build layer |
 | `zig-gamedev/zig-gamedev` | Large game-dev monorepo with assets and package deps | Clone required heavy filtering; build help fails in deps (`zphysics`, `ztracy`) on Zig 0.14 | Large asset graphs, dependency API drift, package-level diagnostics, optional example selection |
+| `tigerbeetle/tigerbeetle` | Distributed financial database with large test/release machinery | Host Zig `0.14.0` fails exact Zig `0.14.1` requirement | Large test matrix, release/package artifact graph, generated tooling, target-specific optimization/link settings |
+| `ghostty-org/ghostty` | Terminal app with resources, platform integration, and packaging | Host Zig `0.14.0` fails on newer ZON/filesystem build APIs | Native dependency preflight, resource/app-bundle staging, package/sign steps, generated config/resources |
 
 ## Integration Branches
 
@@ -50,6 +53,8 @@ Prepared and pushed on the forks:
 | `godofecht/libvaxis` | `azazel-zaza-integration` |
 | `godofecht/capy` | `azazel-zaza-integration` |
 | `godofecht/zig-gamedev` | `azazel-zaza-integration` |
+| `godofecht/tigerbeetle` | `azazel-zaza-integration` |
+| `godofecht/ghostty` | `azazel-zaza-integration` |
 
 Each branch has a `.azazel/` scaffold with repo metadata, a starting
 `project.cue`, integration notes, and `.azazel/parity.json`. The parity manifest
@@ -79,6 +84,32 @@ The current manifests mark Azazel status as `scaffold-only`. That is deliberate:
 the reports are allowed to prove that the corpus is blocked by toolchain/API
 gaps, but they must not claim replacement parity until Azazel can actually
 translate and run the declared target slice.
+
+## 10-Repo Batch Plan
+
+Run:
+
+```sh
+tools/huge_corpus.py --plan --expect-count 10
+```
+
+The runner writes `corpus-plan.json` in the clone root before any clone or
+build is needed. The plan records:
+
+- the exact 10 repo names, upstreams, forks, and integration branch
+- the declared Zig lane and resolved local toolchain path
+- doctor readiness and missing host prerequisites
+- expected baseline/build classifications
+- first Azazel target slices and replacement gaps
+- executable parity readiness
+
+Use `--expect-count 10` with `--prepare`, `--doctor`, `--build`, `--parity`,
+and `--executable-parity` as well. It fails fast if a narrowed repo selection
+would accidentally run against fewer than the full batch.
+
+All ten repos now have real baseline classifications. Reports reserve
+`matches_expected: null` for future entries that are intentionally marked
+`unverified` before their real baseline command has been run.
 
 ## Executable Azazel Parity
 
@@ -144,8 +175,11 @@ Fresh proof run on 2026-07-31 from `/tmp/azazel-huge-proof`:
 | `libvaxis` | `0.16.0` | `ok` | Upstream build succeeds. |
 | `capy` | `0.14.1` | `dependency-format` | Transitive `zig-objc` dependency still uses string `.name`, rejected by Zig package parsing. |
 | `zig-gamedev` | `0.15.2` | `ok` | Upstream build succeeds after repairing the integration branch to include upstream files plus `.azazel`. |
+| `tigerbeetle` | `0.14.1` | `ok` | Upstream build succeeds on its exact Zig lane. |
+| `ghostty` | `0.16.0` | `platform-package` | Core/resource graph progresses, then the macOS app bundle path fails at `xcodebuild`/copy-bundle packaging. |
 
-Current successful upstream builds: `libxev`, `libvaxis`, and `zig-gamedev`.
+Current successful upstream builds: `libxev`, `libvaxis`, `zig-gamedev`, and
+`tigerbeetle`.
 Current Azazel benefit is reproducible toolchain/build diagnostics plus fork
 metadata. Full build replacement is not claimed yet. Zaza is not inserted into
 these pure-Zig upstream build graphs unless a repo has a C/C++ target slice that
@@ -185,6 +219,8 @@ command?" without cloning or compiling. Useful statuses:
 | `libvaxis` | fails on host Zig format/build API drift |
 | `capy` | fails fast: exact Zig 0.14.1 required |
 | `zig-gamedev` | dependency build scripts fail on Zig API drift (`lto`, `std.fmt.printInt`) |
+| `tigerbeetle` | fails exact Zig requirement: expected `0.14.1`, host has `0.14.0` |
+| `ghostty` | fails before graph execution on newer ZON/filesystem build APIs |
 
 ## Azazel Gaps Exposed
 
