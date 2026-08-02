@@ -1281,11 +1281,13 @@ language feature logic is also exposed by the stdio LSP prototype in
 
 Azazel's small examples are smoke tests, not the target ceiling. The large-repo
 pressure suite is tracked in [HUGE_PROJECT_CORPUS.md](HUGE_PROJECT_CORPUS.md).
-It records real build graph shapes from projects such as ZLS, libxev, River,
-Mach, MicroZig, libvaxis, Capy, and zig-gamedev, plus the gaps those projects
-expose in Azazel and Zaza.
+It records real build graph shapes from ten projects: ZLS, libxev, River,
+Mach, MicroZig, libvaxis, Capy, zig-gamedev, TigerBeetle, and Ghostty, plus the
+gaps those projects expose in Azazel and Zaza.
 
-Use `tools/huge_corpus.py --prepare` to create the fork overlays,
+Use `tools/huge_corpus.py --plan --expect-count 10` to write a preflight
+`corpus-plan.json` and prove the full batch is selected. Use
+`tools/huge_corpus.py --prepare` to create the fork overlays,
 `tools/huge_corpus.py --audit` to record the host Zig baseline,
 `tools/huge_corpus.py --doctor` to check local toolchains and host prerequisites,
 `tools/huge_corpus.py --build` to prove the upstream build with the declared
@@ -1307,11 +1309,12 @@ graphs can compile upstream source, but they do not claim full replacement;
 library variants, pkg-config/manpage generation, generated Unicode table
 options, benchmarks, examples, and artifact checks remain tracked gaps.
 
-As of the 2026-07-31 proof run, `libxev`, `libvaxis`, and `zig-gamedev` build
-successfully with their declared Zig lanes. The other corpus projects are
+As of the current 10-repo proof plan, `libxev`, `libvaxis`, `zig-gamedev`, and
+`tigerbeetle` build successfully with their declared Zig lanes. The other corpus projects are
 blocked by concrete non-Azazel issues: ZLS's supported dev-toolchain window,
 River host system dependencies, Mach's custom Zig mirror, MicroZig dependency
-fetching, and Capy's transitive package-format drift.
+fetching, Capy's transitive package-format drift, and Ghostty's macOS
+app-bundle packaging path.
 
 ---
 

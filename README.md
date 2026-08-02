@@ -189,6 +189,10 @@ repo-local `.azazel/parity-work/` workspace and runs modeled target slices
 against upstream source. The first ready slice is the `libxev` module probe.
 `libvaxis` also has a package-backed slice that resolves local `zigimg` and
 `uucode` path dependencies through the generated parity workspace.
+Use `tools/huge_corpus.py --plan --expect-count 10` before a full batch run to
+write `corpus-plan.json` and verify that all ten tracked forks are selected.
+Future entries can stay marked `unverified` until their real baseline command
+has been run and classified.
 
 ## Editor support
 
