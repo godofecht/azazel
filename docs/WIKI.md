@@ -446,12 +446,16 @@ app: #Module & {
 		alias: "known-folders"
 		package: "known_folders"
 		module: "known-folders"
+		pass_target: true
+		pass_optimize: true
 	}]
 }
 ```
 
 This maps to `b.dependency(package, .{ .target = target, .optimize = optimize })`
-followed by `root_module.addImport(alias, dep.module(module))`.
+followed by `root_module.addImport(alias, dep.module(module))`. Set
+`pass_target: false` or `pass_optimize: false` for package build scripts that do
+not declare those dependency options.
 
 ---
 
@@ -1309,9 +1313,11 @@ The first executable Azazel slices are `libxev`, `libvaxis`, and
 generated parity workspace's `build.zig.zon`. `zig-gamedev` compiles the shared
 sample `samples/common/src/vectormath.zig` module through a generated
 `exe:zig_gamedev_vectormath_probe` on Zig `0.15.2` and imports the pinned
-`zmath` package through the parity workspace's `build.zig.zon`. These slices
-prove real Azazel graphs can compile upstream source and package dependencies,
-but they do not claim full replacement; library variants, pkg-config/manpage
+`zmath` and `zopengl` packages through the parity workspace's `build.zig.zon`.
+The `zopengl` slice also proves package-specific dependency option forwarding
+controls for build scripts that do not declare `-Doptimize`. These slices prove
+real Azazel graphs can compile upstream source and package dependencies, but
+they do not claim full replacement; library variants, pkg-config/manpage
 generation, generated Unicode table options, benchmarks, examples, assets, and
 framework link metadata remain tracked gaps.
 

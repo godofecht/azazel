@@ -221,6 +221,7 @@ REPOS = [
             "module:zig_gamedev_vectormath",
             "exe:zig_gamedev_vectormath_probe",
             "package:zmath",
+            "package:zopengl",
         ),
     ),
     Repo(
@@ -616,6 +617,9 @@ packages: {
     zmath: {
         path: "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2"
     }
+    zopengl: {
+        path: "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM"
+    }
 }
 
 zig_gamedev_vectormath: #Module & {
@@ -632,6 +636,11 @@ zig_gamedev_vectormath_probe: #Module & {
         alias: "zmath"
         package: "zmath"
         module: "root"
+    }, {
+        alias: "zopengl"
+        package: "zopengl"
+        module: "root"
+        pass_optimize: false
     }]
 }
 """,
@@ -643,12 +652,14 @@ zig_gamedev_vectormath_probe: #Module & {
             ".zig_gamedev_azazel_parity",
             {
                 "zmath": "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
+                "zopengl": "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
             },
             fingerprint="0x28185f0b3b82664a",
         )
         (src_dir / "zig_gamedev_vectormath_probe.zig").write_text(
             """const vectormath = @import("zig_gamedev_vectormath");
 const zmath = @import("zmath");
+const zopengl = @import("zopengl");
 
 pub fn main() void {
     const a = vectormath.Vec3.init(1.0, 2.0, 3.0);
@@ -657,6 +668,7 @@ pub fn main() void {
     if (dot != 32.0) @panic("unexpected vectormath result");
     _ = vectormath.Mat4.initTranslation(a);
     _ = zmath.translation(1.0, 2.0, 3.0);
+    _ = zopengl.Extension.KHR_debug;
 }
 """,
             encoding="utf-8",
@@ -765,6 +777,11 @@ def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
             pkg_root / "zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
             "https://github.com/zig-gamedev/zmath.git",
             "3a5955b2b72cd081563fbb084eff05bffd1e3fbb",
+        )
+        ensure_git_package(
+            pkg_root / "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
+            "https://github.com/zig-gamedev/zopengl.git",
+            "db9d615c742086b39954eef064f957e92dafc7e2",
         )
         return
 

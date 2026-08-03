@@ -81,6 +81,9 @@ const dep = b.dependency("known_folders", .{ .target = target, .optimize = optim
 module.addImport("known-folders", dep.module("known-folders"));
 ```
 
+Set `pass_target: false` or `pass_optimize: false` on a `pkg_imports` entry
+when the package build script does not declare those dependency options.
+
 ## Build Options
 
 Declare typed options once, then opt modules into an options import:
