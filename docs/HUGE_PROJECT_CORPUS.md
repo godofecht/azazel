@@ -171,6 +171,10 @@ The first executable slices are:
 - `package:zglfw` is wired through the parity workspace with
   `pass_optimize: false`
 - `artifact:zglfw:glfw` links the package's exported native GLFW artifact
+- `package:zmesh` and `package:znoise` are wired through local `build.zig.zon`
+  path dependencies in the parity workspace
+- `artifact:zmesh:zmesh` and `artifact:znoise:FastNoiseLite` link exported
+  native package artifacts used by mesh/noise-heavy examples
 
 This proves an Azazel target slice can execute against upstream source. It does
 not claim full project build replacement yet; library variants, generated
@@ -228,7 +232,7 @@ Current executable Azazel parity slices:
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
 | `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `ok` on Zig `0.16.0` | Proves package-backed import-mode module compilation through Azazel; generated Unicode table options and example/test matrices are still future work. |
-| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, and package artifact linking can compile through Azazel; SDL/D3D/WebGPU samples, assets, and full example selection are still future work. |
+| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, and multiple native package artifact links can compile through Azazel; SDL/D3D/WebGPU samples, assets, and full example selection are still future work. |
 
 ## Doctor Output
 

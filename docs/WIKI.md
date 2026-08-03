@@ -1331,14 +1331,14 @@ The first executable Azazel slices are `libxev`, `libvaxis`, and
 generated parity workspace's `build.zig.zon`. `zig-gamedev` compiles the shared
 sample `samples/common/src/vectormath.zig` module through a generated
 `exe:zig_gamedev_vectormath_probe` on Zig `0.15.2` and imports the pinned
-`zmath`, `zopengl`, and `zglfw` packages through the parity workspace's
-`build.zig.zon`. The `zglfw` slice also links its exported `glfw` artifact,
-which proves package artifact linking plus native/framework metadata traversal.
-These slices prove real Azazel graphs can compile upstream source and package
-dependencies, but they do not claim full replacement; library variants,
-pkg-config/manpage
+`zmath`, `zopengl`, `zglfw`, `zmesh`, and `znoise` packages through the parity
+workspace's `build.zig.zon`. The `zglfw`, `zmesh`, and `znoise` slices also
+link their exported native artifacts, which proves package artifact linking
+plus native/framework metadata traversal. These slices prove real Azazel graphs
+can compile upstream source and package dependencies, but they do not claim full
+replacement; library variants, pkg-config/manpage
 generation, generated Unicode table options, benchmarks, examples, assets, and
-framework link metadata remain tracked gaps.
+full example selection remain tracked gaps.
 
 As of the current 10-repo proof plan, `libxev`, `libvaxis`, `zig-gamedev`, and
 `tigerbeetle` build successfully with their declared Zig lanes. The other corpus projects are
