@@ -168,7 +168,21 @@ corpus reporting:</p>
 <p>This maps to <code>b.dependency(package, .{ .target = target, .optimize = optimize })</code>
 followed by <code>root_module.addImport(alias, dep.module(module))</code>. Set
 <code>pass_target: false</code> or <code>pass_optimize: false</code> for package build scripts that do
-not declare those dependency options.</p>
+not declare those dependency options. Set <code>backend</code> when a dependency exposes a
+<code>backend</code> enum option; Azazel emits that as <code>.backend = .glfw_wgpu</code> on the
+generated <code>b.dependency</code> call.</p>
+
+<pre data-lang="cue"><code class="language-cue">pkg_imports: [{
+	alias: "zgui"
+	package: "zgui"
+	module: "root"
+	backend: "glfw_wgpu"
+}]
+pkg_artifacts: [{
+	package: "zgui"
+	artifact: "imgui"
+	backend: "glfw_wgpu"
+}]</code></pre>
 
 <p>Link artifacts from <code>build.zig.zon</code> package dependencies:</p>
 
