@@ -164,6 +164,8 @@ The first executable slices are:
   `samples/common/src/vectormath.zig`
 - `exe:zig_gamedev_vectormath_probe` imports the module through Azazel's
   `link: "import"` graph
+- `package:zmath` is wired through a local `build.zig.zon` path dependency in
+  the parity workspace
 
 This proves an Azazel target slice can execute against upstream source. It does
 not claim full project build replacement yet; library variants, generated
@@ -221,7 +223,7 @@ Current executable Azazel parity slices:
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
 | `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `ok` on Zig `0.16.0` | Proves package-backed import-mode module compilation through Azazel; generated Unicode table options and example/test matrices are still future work. |
-| `zig-gamedev` | `module:zig_gamedev_vectormath` plus `exe:zig_gamedev_vectormath_probe` | `ok` on Zig `0.15.2` | Proves a shared sample module can compile through Azazel; SDL/D3D/WebGPU samples, assets, and framework link metadata are still future work. |
+| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath` | `ok` on Zig `0.15.2` | Proves a shared sample module and real Zig package dependency can compile through Azazel; SDL/D3D/WebGPU samples, assets, and framework link metadata are still future work. |
 
 ## Doctor Output
 
