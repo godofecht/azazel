@@ -76,6 +76,11 @@ test "post-build commands have argv" {
             try testing.expect(cmd.argv.len > 0);
             for (cmd.argv) |arg| try testing.expect(arg.len > 0);
         }
+        for (m.install_dirs) |dir| {
+            try testing.expect(dir.source_dir.len > 0);
+            try testing.expect(dir.install_dir.len > 0);
+            try testing.expect(dir.install_subdir.len > 0);
+        }
     }
 }
 

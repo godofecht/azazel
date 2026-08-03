@@ -21,6 +21,12 @@ package build
 	argv: [...string]
 }
 
+#InstallDir: {
+	source_dir: string
+	install_dir: string | *"bin"
+	install_subdir: string
+}
+
 #PackageImport: {
 	alias:   string
 	package: string
@@ -71,6 +77,7 @@ package build
 	link:     #Link | *"abi"
 	post: [...#Command] | *[]
 	pre: [...#Command] | *[]
+	install_dirs: [...#InstallDir] | *[]
 	pkg_imports: [...#PackageImport] | *[]
 	pkg_artifacts: [...#PackageArtifact] | *[]
 	build_options: [...string] | *[]

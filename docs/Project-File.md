@@ -15,6 +15,7 @@ Every module is a `#Module` with these fields:
 | `link` | `"abi"` `"import"` | no | `"abi"` | Whether dependents link or import this module |
 | `pre` | command list | no | `[]` | Commands to run before compiling this module |
 | `post` | command list | no | `[]` | Commands to run after installing this module |
+| `install_dirs` | install directory list | no | `[]` | Stages asset/content directories |
 | `pkg_imports` | package import list | no | `[]` | Imports from `build.zig.zon` dependencies |
 | `pkg_artifacts` | package artifact list | no | `[]` | Links artifacts from `build.zig.zon` dependencies |
 | `build_options` | `[...string]` | no | `[]` | Names of typed options to expose to the module |
@@ -106,6 +107,23 @@ This maps to:
 const dep = b.dependency("zglfw", .{ .target = target });
 module.linkLibrary(dep.artifact("glfw"));
 ```
+
+Use `install_dirs` to stage runtime assets:
+
+```cue
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    install_dirs: [{
+        source_dir: "assets"
+        install_dir: "bin"
+        install_subdir: "assets"
+    }]
+}
+```
+
+This maps to `b.addInstallDirectory` and is attached to the default install
+step.
 
 ## Build Options
 

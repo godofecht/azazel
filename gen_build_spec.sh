@@ -18,6 +18,12 @@ pub const Command = struct {
     argv: []const []const u8,
 };
 
+pub const InstallDir = struct {
+    source_dir: []const u8,
+    install_dir: []const u8,
+    install_subdir: []const u8,
+};
+
 pub const Toolchain = struct {
     zig_lanes: []const []const u8,
     preferred_zig_lane: []const u8,
@@ -76,6 +82,7 @@ pub const Module = struct {
     link: Link,
     pre: []const Command,
     post: []const Command,
+    install_dirs: []const InstallDir,
     pkg_imports: []const PackageImport,
     pkg_artifacts: []const PackageArtifact,
     build_options: []const []const u8,
@@ -190,6 +197,19 @@ def zig_commands(items):
         rendered.append('.{ .argv = ' + zig_string_list(item.get('argv', [])) + ' }')
     return '&.{ ' + ', '.join(rendered) + ' }'
 
+def zig_install_dirs(items):
+    if not items:
+        return '&.{}'
+    rendered = []
+    for item in items:
+        rendered.append(
+            '.{ .source_dir = ' + zig_string(item['source_dir'])
+            + ', .install_dir = ' + zig_string(item.get('install_dir', 'bin'))
+            + ', .install_subdir = ' + zig_string(item['install_subdir'])
+            + ' }'
+        )
+    return '&.{ ' + ', '.join(rendered) + ' }'
+
 def zig_pkg_imports(items):
     if not items:
         return '&.{}'
@@ -260,6 +280,7 @@ for name, m in mods.items():
     deps_str = zig_string_list(deps)
     pre_str = zig_commands(m.get('pre', []))
     post_str = zig_commands(m.get('post', []))
+    install_dirs_str = zig_install_dirs(m.get('install_dirs', []))
     pkg_imports_str = zig_pkg_imports(m.get('pkg_imports', []))
     pkg_artifacts_str = zig_pkg_artifacts(m.get('pkg_artifacts', []))
     build_options_str = zig_string_list(m.get('build_options', []))
@@ -272,6 +293,7 @@ for name, m in mods.items():
         .link = {link},
         .pre = {pre_str},
         .post = {post_str},
+        .install_dirs = {install_dirs_str},
         .pkg_imports = {pkg_imports_str},
         .pkg_artifacts = {pkg_artifacts_str},
         .build_options = {build_options_str},
