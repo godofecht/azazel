@@ -15,6 +15,7 @@ produce build/parity-readiness reports for the corpus:
 
 ```sh
 tools/huge_corpus.py --plan --expect-count 10
+tools/huge_corpus.py --roadmap --expect-count 10
 tools/huge_corpus.py --prepare --push
 tools/huge_corpus.py --audit
 tools/huge_corpus.py --doctor
@@ -110,6 +111,30 @@ would accidentally run against fewer than the full batch.
 All ten repos now have real baseline classifications. Reports reserve
 `matches_expected: null` for future entries that are intentionally marked
 `unverified` before their real baseline command has been run.
+
+## Roadmap and Issue Output
+
+Run:
+
+```sh
+tools/huge_corpus.py --roadmap --expect-count 10
+```
+
+The runner writes `corpus-roadmap.md` and one issue-ready markdown file per repo
+under `corpus-issues/` in the clone root. These files are generated from the
+same manifests and doctor preflight data as `corpus-plan.json`; they do not
+claim build replacement, executable parity, or missing prerequisites that are
+not present in the corpus metadata.
+
+Each issue file records:
+
+- upstream and fork names
+- declared Zig lanes and expected classifications
+- doctor readiness and missing prerequisites
+- first target slices
+- replacement gaps
+- concrete next action
+- acceptance criteria for moving that repo toward Azazel/Zaza replacement value
 
 ## Executable Azazel Parity
 
