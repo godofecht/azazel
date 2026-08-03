@@ -58,15 +58,18 @@ observed baseline classification with each repo's manifest. Executable parity
 reports regenerate Azazel's <code>build_spec.zig</code> inside <code>.azazel/parity-work/</code> and
 run the generated Zig build for any target slice marked ready.</p>
 
-<p>The first executable Azazel slices are <code>libxev</code> and <code>libvaxis</code>. <code>libxev</code> proves
-plain import-mode module compilation by pointing <code>module:xev</code> at upstream
-<code>src/main.zig</code> and compiling a generated <code>exe:xev_probe</code>. <code>libvaxis</code> adds
-package-backed module compilation: <code>module:vaxis</code> imports local <code>zigimg</code> and
-<code>uucode</code> path dependencies through the generated parity workspace's
-<code>build.zig.zon</code>. Both slices compile on Zig <code>0.16.0</code>. They prove real Azazel
-graphs can compile upstream source, but they do not claim full replacement;
-library variants, pkg-config/manpage generation, generated Unicode table
-options, benchmarks, examples, and artifact checks remain tracked gaps.</p>
+<p>The first executable Azazel slices are <code>libxev</code>, <code>libvaxis</code>, and
+<code>zig-gamedev</code>. <code>libxev</code> proves plain import-mode module compilation by pointing
+<code>module:xev</code> at upstream <code>src/main.zig</code> and compiling a generated
+<code>exe:xev_probe</code>. <code>libvaxis</code> adds package-backed module compilation:
+<code>module:vaxis</code> imports local <code>zigimg</code> and <code>uucode</code> path dependencies through the
+generated parity workspace's <code>build.zig.zon</code>. <code>zig-gamedev</code> compiles the shared
+sample <code>samples/common/src/vectormath.zig</code> module through a generated
+<code>exe:zig_gamedev_vectormath_probe</code> on Zig <code>0.15.2</code>. These slices prove real
+Azazel graphs can compile upstream source, but they do not claim full
+replacement; library variants, pkg-config/manpage generation, generated Unicode
+table options, benchmarks, examples, assets, and framework link metadata remain
+tracked gaps.</p>
 
 <p>As of the current 10-repo proof plan, <code>libxev</code>, <code>libvaxis</code>, <code>zig-gamedev</code>, and
 <code>tigerbeetle</code> build successfully with their declared Zig lanes. The other corpus projects are

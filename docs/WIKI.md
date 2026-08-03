@@ -1301,15 +1301,18 @@ observed baseline classification with each repo's manifest. Executable parity
 reports regenerate Azazel's `build_spec.zig` inside `.azazel/parity-work/` and
 run the generated Zig build for any target slice marked ready.
 
-The first executable Azazel slices are `libxev` and `libvaxis`. `libxev` proves
-plain import-mode module compilation by pointing `module:xev` at upstream
-`src/main.zig` and compiling a generated `exe:xev_probe`. `libvaxis` adds
-package-backed module compilation: `module:vaxis` imports local `zigimg` and
-`uucode` path dependencies through the generated parity workspace's
-`build.zig.zon`. Both slices compile on Zig `0.16.0`. They prove real Azazel
-graphs can compile upstream source, but they do not claim full replacement;
-library variants, pkg-config/manpage generation, generated Unicode table
-options, benchmarks, examples, and artifact checks remain tracked gaps.
+The first executable Azazel slices are `libxev`, `libvaxis`, and
+`zig-gamedev`. `libxev` proves plain import-mode module compilation by pointing
+`module:xev` at upstream `src/main.zig` and compiling a generated
+`exe:xev_probe`. `libvaxis` adds package-backed module compilation:
+`module:vaxis` imports local `zigimg` and `uucode` path dependencies through the
+generated parity workspace's `build.zig.zon`. `zig-gamedev` compiles the shared
+sample `samples/common/src/vectormath.zig` module through a generated
+`exe:zig_gamedev_vectormath_probe` on Zig `0.15.2`. These slices prove real
+Azazel graphs can compile upstream source, but they do not claim full
+replacement; library variants, pkg-config/manpage generation, generated Unicode
+table options, benchmarks, examples, assets, and framework link metadata remain
+tracked gaps.
 
 As of the current 10-repo proof plan, `libxev`, `libvaxis`, `zig-gamedev`, and
 `tigerbeetle` build successfully with their declared Zig lanes. The other corpus projects are

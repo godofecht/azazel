@@ -214,6 +214,10 @@ REPOS = [
         "zig-api-drift",
         ("package modules", "asset-heavy examples", "optional dependency selection"),
         replacement_gaps=("C/C++ dependency graph slices", "asset-heavy example selection", "framework/link metadata"),
+        executable_parity_status="ready",
+        executable_parity_command=("zig", "build", "--summary", "all"),
+        expected_executable_parity_classification="ok",
+        executable_parity_targets=("module:zig_gamedev_vectormath", "exe:zig_gamedev_vectormath_probe"),
     ),
     Repo(
         "tigerbeetle",
@@ -589,6 +593,45 @@ pub fn main() void {
     _ = vaxis.Vaxis;
     _ = vaxis.Key;
     _ = vaxis.zigimg.Image;
+}
+""",
+            encoding="utf-8",
+        )
+        return
+
+    if repo.name == "zig-gamedev":
+        (workspace / "project.cue").write_text(
+            """package build
+
+toolchain: zig: {
+    lanes: ["0.15"]
+    preferred: "0.15"
+}
+
+zig_gamedev_vectormath: #Module & {
+    kind: "module"
+    root: "../../samples/common/src/vectormath.zig"
+}
+
+zig_gamedev_vectormath_probe: #Module & {
+    kind: "exe"
+    root: "src/zig_gamedev_vectormath_probe.zig"
+    deps: ["zig_gamedev_vectormath"]
+    link: "import"
+}
+""",
+            encoding="utf-8",
+        )
+        write_standard_export(workspace, ("zig_gamedev_vectormath", "zig_gamedev_vectormath_probe"))
+        (src_dir / "zig_gamedev_vectormath_probe.zig").write_text(
+            """const vectormath = @import("zig_gamedev_vectormath");
+
+pub fn main() void {
+    const a = vectormath.Vec3.init(1.0, 2.0, 3.0);
+    const b = vectormath.Vec3.init(4.0, 5.0, 6.0);
+    const dot = vectormath.Vec3.dot(a, b);
+    if (dot != 32.0) @panic("unexpected vectormath result");
+    _ = vectormath.Mat4.initTranslation(a);
 }
 """,
             encoding="utf-8",

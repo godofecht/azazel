@@ -160,11 +160,16 @@ The first executable slices are:
 - `exe:vaxis_probe` imports the module through Azazel's `link: "import"` graph
 - `package:zigimg` and `package:uucode` are wired through local `build.zig.zon`
   path dependencies in the parity workspace
+- `module:zig_gamedev_vectormath` points at upstream
+  `samples/common/src/vectormath.zig`
+- `exe:zig_gamedev_vectormath_probe` imports the module through Azazel's
+  `link: "import"` graph
 
 This proves an Azazel target slice can execute against upstream source. It does
 not claim full project build replacement yet; library variants, generated
 pkg-config/manpage outputs, generated Unicode tables, benchmarks, examples, and
-artifact checks remain tracked replacement gaps.
+artifact checks, asset-heavy examples, and framework/link metadata remain
+tracked replacement gaps.
 
 ## Build Proof Reports
 
@@ -216,6 +221,7 @@ Current executable Azazel parity slices:
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
 | `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `ok` on Zig `0.16.0` | Proves package-backed import-mode module compilation through Azazel; generated Unicode table options and example/test matrices are still future work. |
+| `zig-gamedev` | `module:zig_gamedev_vectormath` plus `exe:zig_gamedev_vectormath_probe` | `ok` on Zig `0.15.2` | Proves a shared sample module can compile through Azazel; SDL/D3D/WebGPU samples, assets, and framework link metadata are still future work. |
 
 ## Doctor Output
 
@@ -264,7 +270,7 @@ command?" without cloning or compiling. Useful statuses:
 - Post-build commands need to compose with generated artifacts and installed artifacts across CMake and Zig branches.
 - System-command enablement should produce precise errors naming the target and command that was skipped.
 - C/C++ integration needs parity with Zig build metadata: include paths, link libraries, frameworks, and per-config commands.
-- Large repo support now has per-repo parity manifests and executable Azazel parity slices for `libxev` and `libvaxis`; the next step is to expand slice coverage one repo at a time.
+- Large repo support now has per-repo parity manifests and executable Azazel parity slices for `libxev`, `libvaxis`, and `zig-gamedev`; the next step is to expand slice coverage one repo at a time.
 
 ## Next Targets
 
