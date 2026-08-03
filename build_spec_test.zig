@@ -79,12 +79,18 @@ test "post-build commands have argv" {
     }
 }
 
-test "package imports name an alias, package, and module" {
+test "package imports and artifacts name their package surfaces" {
     for (spec.modules) |m| {
         for (m.pkg_imports) |pkg| {
             try testing.expect(pkg.alias.len > 0);
             try testing.expect(pkg.package.len > 0);
             try testing.expect(pkg.module.len > 0);
+            _ = pkg.pass_target;
+            _ = pkg.pass_optimize;
+        }
+        for (m.pkg_artifacts) |pkg| {
+            try testing.expect(pkg.package.len > 0);
+            try testing.expect(pkg.artifact.len > 0);
             _ = pkg.pass_target;
             _ = pkg.pass_optimize;
         }
