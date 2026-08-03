@@ -224,6 +224,10 @@ REPOS = [
             "package:zopengl",
             "package:zglfw",
             "artifact:zglfw:glfw",
+            "package:zmesh",
+            "artifact:zmesh:zmesh",
+            "package:znoise",
+            "artifact:znoise:FastNoiseLite",
         ),
     ),
     Repo(
@@ -625,6 +629,12 @@ packages: {
     zopengl: {
         path: "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM"
     }
+    zmesh: {
+        path: "../../zig-pkg/zmesh-0.11.0-dev-oO3A5lKRCgCGK8Krro4Rj_F_MhO8LT487re5u_DNIzvl"
+    }
+    znoise: {
+        path: "../../zig-pkg/znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7"
+    }
 }
 
 zig_gamedev_vectormath: #Module & {
@@ -651,11 +661,25 @@ zig_gamedev_vectormath_probe: #Module & {
         package: "zopengl"
         module: "root"
         pass_optimize: false
+    }, {
+        alias: "zmesh"
+        package: "zmesh"
+        module: "root"
+    }, {
+        alias: "znoise"
+        package: "znoise"
+        module: "root"
     }]
     pkg_artifacts: [{
         package: "zglfw"
         artifact: "glfw"
         pass_optimize: false
+    }, {
+        package: "zmesh"
+        artifact: "zmesh"
+    }, {
+        package: "znoise"
+        artifact: "FastNoiseLite"
     }]
 }
 """,
@@ -669,6 +693,8 @@ zig_gamedev_vectormath_probe: #Module & {
                 "zmath": "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
                 "zglfw": "../../zig-pkg/zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC",
                 "zopengl": "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
+                "zmesh": "../../zig-pkg/zmesh-0.11.0-dev-oO3A5lKRCgCGK8Krro4Rj_F_MhO8LT487re5u_DNIzvl",
+                "znoise": "../../zig-pkg/znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7",
             },
             fingerprint="0x28185f0b3b82664a",
         )
@@ -677,6 +703,8 @@ zig_gamedev_vectormath_probe: #Module & {
 const zmath = @import("zmath");
 const zglfw = @import("zglfw");
 const zopengl = @import("zopengl");
+const zmesh = @import("zmesh");
+const znoise = @import("znoise");
 
 pub fn main() void {
     const a = vectormath.Vec3.init(1.0, 2.0, 3.0);
@@ -687,6 +715,8 @@ pub fn main() void {
     _ = zmath.translation(1.0, 2.0, 3.0);
     _ = zglfw.Window;
     _ = zopengl.Extension.KHR_debug;
+    _ = zmesh.io;
+    _ = znoise.FastNoiseLite;
 }
 """,
             encoding="utf-8",
@@ -805,6 +835,16 @@ def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
             pkg_root / "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
             "https://github.com/zig-gamedev/zopengl.git",
             "db9d615c742086b39954eef064f957e92dafc7e2",
+        )
+        ensure_git_package(
+            pkg_root / "zmesh-0.11.0-dev-oO3A5lKRCgCGK8Krro4Rj_F_MhO8LT487re5u_DNIzvl",
+            "https://github.com/zig-gamedev/zmesh.git",
+            "a9c23ba7440b8c03cbc2bec89a3285fe84cbb50f",
+        )
+        ensure_git_package(
+            pkg_root / "znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7",
+            "https://github.com/zig-gamedev/znoise.git",
+            "01c8b354cc3ef7f2293de75e58d3298a77d7ed06",
         )
         return
 
