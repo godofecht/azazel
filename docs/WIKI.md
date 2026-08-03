@@ -1287,7 +1287,9 @@ gaps those projects expose in Azazel and Zaza.
 
 Use `tools/huge_corpus.py --plan --expect-count 10` to write a preflight
 `corpus-plan.json` and prove the full batch is selected. Use
-`tools/huge_corpus.py --prepare` to create the fork overlays,
+`tools/huge_corpus.py --roadmap --expect-count 10` to write
+`corpus-roadmap.md` plus issue-ready markdown files under `corpus-issues/` from
+the same manifest data. Use `tools/huge_corpus.py --prepare` to create the fork overlays,
 `tools/huge_corpus.py --audit` to record the host Zig baseline,
 `tools/huge_corpus.py --doctor` to check local toolchains and host prerequisites,
 `tools/huge_corpus.py --build` to prove the upstream build with the declared

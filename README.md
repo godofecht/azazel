@@ -191,6 +191,9 @@ against upstream source. The first ready slice is the `libxev` module probe.
 `uucode` path dependencies through the generated parity workspace.
 Use `tools/huge_corpus.py --plan --expect-count 10` before a full batch run to
 write `corpus-plan.json` and verify that all ten tracked forks are selected.
+Use `tools/huge_corpus.py --roadmap --expect-count 10` to generate
+`corpus-roadmap.md` plus issue-ready markdown files under `corpus-issues/` from
+the same manifest data.
 Future entries can stay marked `unverified` until their real baseline command
 has been run and classified.
 

@@ -751,6 +751,124 @@ def repo_plan_entry(repo: Repo) -> dict[str, object]:
     }
 
 
+def markdown_list(items: list[object] | tuple[str, ...]) -> str:
+    if not items:
+        return "- none\n"
+    return "".join(f"- `{item}`\n" for item in items)
+
+
+def roadmap_issue_body(entry: dict[str, object]) -> str:
+    name = str(entry["name"])
+    return (
+        f"# Replace upstream build slice for `{name}`\n\n"
+        "## Source\n\n"
+        f"- upstream: `{entry['upstream']}`\n"
+        f"- fork: `{entry['fork']}`\n"
+        f"- integration branch: `{entry['branch']}`\n"
+        f"- notes: {entry['notes']}\n\n"
+        "## Current proof state\n\n"
+        f"- preferred Zig lane: `{entry['preferred_zig']}`\n"
+        f"- build Zig lane: `{entry['build_zig']}`\n"
+        f"- doctor ready: `{entry['doctor_ready']}`\n"
+        f"- missing prerequisites: {', '.join(f'`{item}`' for item in entry['doctor_missing']) or 'none'}\n"
+        f"- expected baseline classification: `{entry['expected_baseline_classification']}`\n"
+        f"- expected build classification: `{entry['expected_build_classification']}`\n"
+        f"- Azazel parity status: `{entry['azazel_status']}`\n"
+        f"- executable parity status: `{entry['executable_parity_status']}`\n\n"
+        "## First target slice\n\n"
+        f"{markdown_list(entry['first_targets'])}\n"
+        "## Replacement gaps\n\n"
+        f"{markdown_list(entry['replacement_gaps'])}\n"
+        "## Host/system prerequisites\n\n"
+        "Required tools:\n\n"
+        f"{markdown_list(entry['required_tools'])}\n"
+        "Pkg-config libraries:\n\n"
+        f"{markdown_list(entry['pkg_config_libs'])}\n"
+        "System dependencies:\n\n"
+        f"{markdown_list(entry['system_deps'])}\n"
+        "## Next action\n\n"
+        f"{entry['next_action']}\n\n"
+        "## Acceptance criteria\n\n"
+        "- `tools/huge_corpus.py --doctor --repo "
+        f"{name}` reports the declared prerequisites accurately\n"
+        "- `tools/huge_corpus.py --build --repo "
+        f"{name}` matches the declared expected build classification\n"
+        "- the first target slice has either executable Azazel parity or an updated manifest explaining why it is not modeled yet\n"
+        "- docs and generated site output describe the new replacement boundary without claiming full build parity prematurely\n"
+    )
+
+
+def roadmap(root: Path, repos: list[Repo], expect_count: int | None) -> None:
+    entries = [repo_plan_entry(repo) for repo in repos]
+    issue_dir = root / "corpus-issues"
+    issue_dir.mkdir(parents=True, exist_ok=True)
+
+    gap_counts: dict[str, int] = {}
+    for entry in entries:
+        for gap in entry["replacement_gaps"]:
+            gap_counts[str(gap)] = gap_counts.get(str(gap), 0) + 1
+
+    issue_links = []
+    for entry in entries:
+        name = str(entry["name"])
+        issue_path = issue_dir / f"{name}.md"
+        issue_path.write_text(roadmap_issue_body(entry), encoding="utf-8")
+        issue_links.append((name, issue_path.relative_to(root)))
+
+    summary = {
+        "repo_count": len(entries),
+        "expected_count": expect_count,
+        "count_matches": None if expect_count is None else len(entries) == expect_count,
+        "doctor_ready": sum(1 for entry in entries if entry["doctor_ready"]),
+        "doctor_blocked": sum(1 for entry in entries if not entry["doctor_ready"]),
+        "executable_parity_ready": sum(1 for entry in entries if entry["executable_parity_status"] == "ready"),
+    }
+    lines = [
+        "# Azazel/Zaza 10-Repo Replacement Roadmap",
+        "",
+        "This roadmap is generated from the same corpus manifests used by",
+        "`tools/huge_corpus.py --plan`. It records replacement work without",
+        "claiming full-project parity for repos whose Azazel slice is still",
+        "`scaffold-only` or `not-modeled`.",
+        "",
+        "## Summary",
+        "",
+        f"- repos: `{summary['repo_count']}`",
+        f"- expected count: `{summary['expected_count']}`",
+        f"- count matches: `{summary['count_matches']}`",
+        f"- doctor ready: `{summary['doctor_ready']}`",
+        f"- doctor blocked: `{summary['doctor_blocked']}`",
+        f"- executable parity slices ready: `{summary['executable_parity_ready']}`",
+        "",
+        "## Cross-Repo Gap Clusters",
+        "",
+    ]
+    if gap_counts:
+        for gap, count in sorted(gap_counts.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"- `{gap}`: {count} repo(s)")
+    else:
+        lines.append("- none")
+    lines.extend(["", "## Repo Issues", ""])
+    for name, path in issue_links:
+        lines.append(f"- [`{name}`]({path})")
+    lines.extend(["", "## Batch Commands", ""])
+    lines.extend(
+        [
+            "```sh",
+            "tools/huge_corpus.py --plan --expect-count 10",
+            "tools/huge_corpus.py --roadmap --expect-count 10",
+            "tools/huge_corpus.py --doctor --expect-count 10",
+            "tools/huge_corpus.py --build --expect-count 10",
+            "tools/huge_corpus.py --executable-parity --expect-count 10",
+            "```",
+            "",
+        ]
+    )
+    (root / "corpus-roadmap.md").write_text("\n".join(lines), encoding="utf-8")
+    status = "ok" if summary["count_matches"] is not False else "mismatch"
+    print(f"roadmap {status}: wrote corpus-roadmap.md and {len(issue_links)} issue files")
+
+
 def plan(root: Path, repos: list[Repo], expect_count: int | None) -> None:
     entries = [repo_plan_entry(repo) for repo in repos]
     summary = {
@@ -774,6 +892,7 @@ def plan(root: Path, repos: list[Repo], expect_count: int | None) -> None:
         "repos": entries,
         "commands": {
             "prepare": "tools/huge_corpus.py --prepare --push --expect-count 10",
+            "roadmap": "tools/huge_corpus.py --roadmap --expect-count 10",
             "doctor": "tools/huge_corpus.py --doctor --expect-count 10",
             "build": "tools/huge_corpus.py --build --expect-count 10",
             "parity": "tools/huge_corpus.py --parity --expect-count 10",
@@ -1216,6 +1335,7 @@ def main() -> None:
     parser.add_argument("--root", default=os.environ.get("AZAZEL_HUGE_ROOT", "/tmp/azazel-huge-forks"))
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--plan", action="store_true")
+    parser.add_argument("--roadmap", action="store_true")
     parser.add_argument("--audit", action="store_true")
     parser.add_argument("--parity", action="store_true")
     parser.add_argument("--executable-parity", action="store_true")
@@ -1249,6 +1369,8 @@ def main() -> None:
 
     if args.plan:
         plan(root, repos, args.expect_count)
+    if args.roadmap:
+        roadmap(root, repos, args.expect_count)
     if args.prepare:
         prepare(root, repos, args.push, args.refresh_base)
     if args.audit:
@@ -1264,13 +1386,14 @@ def main() -> None:
     if (
         not args.prepare
         and not args.plan
+        and not args.roadmap
         and not args.audit
         and not args.parity
         and not args.executable_parity
         and not args.build
         and not args.doctor
     ):
-        parser.error("choose --plan, --prepare, --audit, --parity, --executable-parity, --build, and/or --doctor")
+        parser.error("choose --plan, --roadmap, --prepare, --audit, --parity, --executable-parity, --build, and/or --doctor")
 
 
 if __name__ == "__main__":
