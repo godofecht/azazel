@@ -475,6 +475,25 @@ pkg_artifacts: [{
 }]
 ```
 
+Use `pkg_library_paths` when a package helper normally adds a prebuilt library
+directory to the consuming artifact. Pair it with `native.system_libs` when the
+artifact must also link a system library name:
+
+```cue
+pkg_artifacts: [{
+	package: "zgpu"
+	artifact: "zdawn"
+}]
+pkg_library_paths: [{
+	package: "dawn_aarch64_macos"
+	os: "macos"
+	arch: "aarch64"
+}]
+native: {
+	system_libs: ["dawn"]
+}
+```
+
 Link artifacts from `build.zig.zon` package dependencies:
 
 ```cue

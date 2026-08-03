@@ -233,6 +233,9 @@ REPOS = [
             "package:zgui",
             "artifact:zgui:imgui",
             "package-option:zgui:backend=glfw_wgpu",
+            "package:zgpu",
+            "artifact:zgpu:zdawn",
+            "package-library-path:dawn_aarch64_macos",
             "asset:sdl2_demo_content",
         ),
         executable_parity_install_checks=(
@@ -527,6 +530,7 @@ build: modules: {
             pre: v.pre
             post: v.post
             install_dirs: v.install_dirs
+            pkg_library_paths: v.pkg_library_paths
             pkg_imports: v.pkg_imports
             pkg_artifacts: v.pkg_artifacts
             build_options: v.build_options
@@ -650,6 +654,14 @@ packages: {
     zgui: {
         path: "../../zig-pkg/zgui-0.6.0-dev--L6sZKkSbgCUBXLVfwJDPpMkETz7ll-mmQYQae-nMxjt"
     }
+    zgpu: {
+        path: "../../zig-pkg/zgpu-0.12.0-dev-UxK2DAfAzgAdcCqFsXIj2RZRQFuLFhzr9C-s91Hm0U0q"
+    }
+    dawn_aarch64_macos: {
+        url: "https://github.com/michal-z/webgpu_dawn-aarch64-macos/archive/d2360cdfff0cf4a780cb77aa47c57aca03cc6dfe.tar.gz"
+        hash: "N-V-__8AALVIRAIf5nfpx8-4mEo2RGsynVryPQPcHk95qFM5"
+        lazy: true
+    }
 }
 
 zig_gamedev_vectormath: #Module & {
@@ -689,6 +701,10 @@ zig_gamedev_vectormath_probe: #Module & {
         package: "zgui"
         module: "root"
         backend: "glfw_wgpu"
+    }, {
+        alias: "zgpu"
+        package: "zgpu"
+        module: "root"
     }]
     pkg_artifacts: [{
         package: "zglfw"
@@ -704,7 +720,18 @@ zig_gamedev_vectormath_probe: #Module & {
         package: "zgui"
         artifact: "imgui"
         backend: "glfw_wgpu"
+    }, {
+        package: "zgpu"
+        artifact: "zdawn"
     }]
+    pkg_library_paths: [{
+        package: "dawn_aarch64_macos"
+        os: "macos"
+        arch: "aarch64"
+    }]
+    native: {
+        system_libs: ["dawn"]
+    }
     install_dirs: [{
         source_dir: "../../samples/sdl2_demo/sdl2_demo_content"
         install_dir: "bin"
@@ -725,6 +752,12 @@ zig_gamedev_vectormath_probe: #Module & {
                 "zmesh": "../../zig-pkg/zmesh-0.11.0-dev-oO3A5lKRCgCGK8Krro4Rj_F_MhO8LT487re5u_DNIzvl",
                 "znoise": "../../zig-pkg/znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7",
                 "zgui": "../../zig-pkg/zgui-0.6.0-dev--L6sZKkSbgCUBXLVfwJDPpMkETz7ll-mmQYQae-nMxjt",
+                "zgpu": "../../zig-pkg/zgpu-0.12.0-dev-UxK2DAfAzgAdcCqFsXIj2RZRQFuLFhzr9C-s91Hm0U0q",
+                "dawn_aarch64_macos": {
+                    "url": "https://github.com/michal-z/webgpu_dawn-aarch64-macos/archive/d2360cdfff0cf4a780cb77aa47c57aca03cc6dfe.tar.gz",
+                    "hash": "N-V-__8AALVIRAIf5nfpx8-4mEo2RGsynVryPQPcHk95qFM5",
+                    "lazy": True,
+                },
             },
             fingerprint="0x28185f0b3b82664a",
         )
@@ -736,6 +769,7 @@ const zopengl = @import("zopengl");
 const zmesh = @import("zmesh");
 const znoise = @import("znoise");
 const zgui = @import("zgui");
+const zgpu = @import("zgpu");
 
 pub fn main() void {
     const a = vectormath.Vec3.init(1.0, 2.0, 3.0);
@@ -750,6 +784,7 @@ pub fn main() void {
     _ = znoise.FnlGenerator;
     _ = zgui.backend;
     _ = zgui.DrawVert;
+    _ = zgpu.GraphicsContext;
 }
 """,
             encoding="utf-8",
@@ -783,6 +818,7 @@ build: modules: {
             pre: v.pre
             post: v.post
             install_dirs: v.install_dirs
+            pkg_library_paths: v.pkg_library_paths
             pkg_imports: v.pkg_imports
             pkg_artifacts: v.pkg_artifacts
             build_options: v.build_options
@@ -804,7 +840,7 @@ build: options: _options
 def write_workspace_zon(
     workspace: Path,
     package_name: str,
-    deps: dict[str, str],
+    deps: dict[str, str | dict[str, object]],
     fingerprint: str = "0x556db0b97b71fd4c",
 ) -> None:
     lines = [
@@ -814,14 +850,20 @@ def write_workspace_zon(
         f"    .fingerprint = {fingerprint},",
         "    .dependencies = .{",
     ]
-    for name, path in deps.items():
-        lines.extend(
-            [
-                f"        .{name} = .{{",
-                f'            .path = "{path}",',
-                "        },",
-            ]
-        )
+    for name, dep in deps.items():
+        lines.append(f"        .{name} = .{{")
+        if isinstance(dep, str):
+            lines.append(f'            .path = "{dep}",')
+        else:
+            if "path" in dep:
+                lines.append(f'            .path = "{dep["path"]}",')
+            if "url" in dep:
+                lines.append(f'            .url = "{dep["url"]}",')
+            if "hash" in dep:
+                lines.append(f'            .hash = "{dep["hash"]}",')
+            if dep.get("lazy", False):
+                lines.append("            .lazy = true,")
+        lines.append("        },")
     lines.extend(
         [
             "    },",
@@ -885,6 +927,11 @@ def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
             pkg_root / "zgui-0.6.0-dev--L6sZKkSbgCUBXLVfwJDPpMkETz7ll-mmQYQae-nMxjt",
             "https://github.com/zig-gamedev/zgui.git",
             "ce016156a8520c438e886cd6c0b605e10ee7af3d",
+        )
+        ensure_git_package(
+            pkg_root / "zgpu-0.12.0-dev-UxK2DAfAzgAdcCqFsXIj2RZRQFuLFhzr9C-s91Hm0U0q",
+            "https://github.com/zig-gamedev/zgpu.git",
+            "c512b60c1f0cd438dcc6297083d0e3d91ad5e717",
         )
         return
 

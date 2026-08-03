@@ -22,6 +22,7 @@ build: modules: {
 			pre:      v.pre
 			post:     v.post
 			install_dirs: v.install_dirs
+			pkg_library_paths: v.pkg_library_paths
 			pkg_imports: v.pkg_imports
 			pkg_artifacts: v.pkg_artifacts
 			build_options: v.build_options
