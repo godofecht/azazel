@@ -21,7 +21,9 @@ build: modules: {
 			link:     v.link
 			pre:      v.pre
 			post:     v.post
+			install_dirs: v.install_dirs
 			pkg_imports: v.pkg_imports
+			pkg_artifacts: v.pkg_artifacts
 			build_options: v.build_options
 			build_options_import: v.build_options_import
 			native: v.native

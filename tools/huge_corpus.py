@@ -53,6 +53,7 @@ class Repo:
     executable_parity_command: tuple[str, ...] = ()
     expected_executable_parity_classification: str = "not-modeled"
     executable_parity_targets: tuple[str, ...] = ()
+    executable_parity_install_checks: tuple[str, ...] = ()
 
     def manifest(self) -> dict[str, object]:
         return {
@@ -80,6 +81,7 @@ class Repo:
             "executable_parity_command": list(self.executable_parity_command),
             "expected_executable_parity_classification": self.expected_executable_parity_classification,
             "executable_parity_targets": list(self.executable_parity_targets),
+            "executable_parity_install_checks": list(self.executable_parity_install_checks),
         }
 
 
@@ -182,7 +184,7 @@ REPOS = [
         replacement_gaps=("generated Unicode tables", "example matrix target selection", "installable demos"),
         executable_parity_status="ready",
         executable_parity_command=("zig", "build", "--summary", "all"),
-        expected_executable_parity_classification="ok",
+        expected_executable_parity_classification="zig-api-drift",
         executable_parity_targets=("module:vaxis", "exe:vaxis_probe", "package:zigimg", "package:uucode"),
     ),
     Repo(
@@ -215,7 +217,7 @@ REPOS = [
         ("package modules", "asset-heavy examples", "optional dependency selection"),
         replacement_gaps=("C/C++ dependency graph slices", "asset-heavy example selection", "framework/link metadata"),
         executable_parity_status="ready",
-        executable_parity_command=("zig", "build", "--summary", "all"),
+        executable_parity_command=("zig", "build", "--prefix", ".azazel-install", "--summary", "all"),
         expected_executable_parity_classification="ok",
         executable_parity_targets=(
             "module:zig_gamedev_vectormath",
@@ -228,6 +230,10 @@ REPOS = [
             "artifact:zmesh:zmesh",
             "package:znoise",
             "artifact:znoise:FastNoiseLite",
+            "asset:sdl2_demo_content",
+        ),
+        executable_parity_install_checks=(
+            ".azazel-install/bin/sdl2_demo_content/zero.png",
         ),
     ),
     Repo(
@@ -412,6 +418,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                         "command": list(repo.executable_parity_command),
                         "expected_classification": repo.expected_executable_parity_classification,
                         "targets": list(repo.executable_parity_targets),
+                        "install_checks": list(repo.executable_parity_install_checks),
                         "workdir": ".azazel/parity-work",
                     },
                 },
@@ -516,7 +523,9 @@ build: modules: {
             link: v.link
             pre: v.pre
             post: v.post
+            install_dirs: v.install_dirs
             pkg_imports: v.pkg_imports
+            pkg_artifacts: v.pkg_artifacts
             build_options: v.build_options
             build_options_import: v.build_options_import
             native: v.native
@@ -681,6 +690,11 @@ zig_gamedev_vectormath_probe: #Module & {
         package: "znoise"
         artifact: "FastNoiseLite"
     }]
+    install_dirs: [{
+        source_dir: "../../samples/sdl2_demo/sdl2_demo_content"
+        install_dir: "bin"
+        install_subdir: "sdl2_demo_content"
+    }]
 }
 """,
             encoding="utf-8",
@@ -716,7 +730,7 @@ pub fn main() void {
     _ = zglfw.Window;
     _ = zopengl.Extension.KHR_debug;
     _ = zmesh.io;
-    _ = znoise.FastNoiseLite;
+    _ = znoise.FnlGenerator;
 }
 """,
             encoding="utf-8",
@@ -749,7 +763,9 @@ build: modules: {
             link: v.link
             pre: v.pre
             post: v.post
+            install_dirs: v.install_dirs
             pkg_imports: v.pkg_imports
+            pkg_artifacts: v.pkg_artifacts
             build_options: v.build_options
             build_options_import: v.build_options_import
             native: v.native
@@ -1314,6 +1330,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                     "command": list(repo.executable_parity_command),
                     "expected_classification": repo.expected_executable_parity_classification,
                     "targets": list(repo.executable_parity_targets),
+                    "install_checks": list(repo.executable_parity_install_checks),
                     "workdir": ".azazel/parity-work",
                 },
             },
@@ -1327,9 +1344,16 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
             "command": list(repo.executable_parity_command),
             "expected_classification": repo.expected_executable_parity_classification,
             "targets": list(repo.executable_parity_targets),
+            "install_checks": list(repo.executable_parity_install_checks),
             "workdir": ".azazel/parity-work",
         },
     )
+    executable = azazel["executable_parity"]
+    executable["status"] = repo.executable_parity_status
+    executable["command"] = list(repo.executable_parity_command)
+    executable["expected_classification"] = repo.expected_executable_parity_classification
+    executable["targets"] = list(repo.executable_parity_targets)
+    executable["install_checks"] = list(repo.executable_parity_install_checks)
     return manifest
 
 
@@ -1390,6 +1414,7 @@ def executable_parity(root: Path, repos: list[Repo]) -> None:
         expected = str(executable.get("expected_classification", "not-modeled"))
         targets = list(executable.get("targets", []))
         command = list(executable.get("command", []))
+        install_checks = list(executable.get("install_checks", []))
         workdir = path / str(executable.get("workdir", ".azazel/parity-work"))
 
         if status != "ready":
@@ -1431,6 +1456,16 @@ def executable_parity(root: Path, repos: list[Repo]) -> None:
                     returncode = result.returncode
                     output = (gen.stdout + result.stdout)[-OUTPUT_TAIL_BYTES:]
                     command = resolved_command
+                    if returncode == 0 and install_checks:
+                        missing = [check for check in install_checks if not (workdir / check).exists()]
+                        if missing:
+                            classification = "missing-install-artifact"
+                            returncode = 1
+                            output = (
+                                output
+                                + "\nmissing executable parity install checks:\n"
+                                + "\n".join(missing)
+                            )[-OUTPUT_TAIL_BYTES:]
 
         matches = classification == expected
         report.append(
@@ -1438,6 +1473,7 @@ def executable_parity(root: Path, repos: list[Repo]) -> None:
                 "name": repo.name,
                 "status": status,
                 "targets": targets,
+                "install_checks": install_checks,
                 "workdir": str(workdir.relative_to(path)) if workdir.is_relative_to(path) else str(workdir),
                 "command": command,
                 "zig": repo.build_zig,
