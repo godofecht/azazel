@@ -217,7 +217,11 @@ REPOS = [
         executable_parity_status="ready",
         executable_parity_command=("zig", "build", "--summary", "all"),
         expected_executable_parity_classification="ok",
-        executable_parity_targets=("module:zig_gamedev_vectormath", "exe:zig_gamedev_vectormath_probe"),
+        executable_parity_targets=(
+            "module:zig_gamedev_vectormath",
+            "exe:zig_gamedev_vectormath_probe",
+            "package:zmath",
+        ),
     ),
     Repo(
         "tigerbeetle",
@@ -608,6 +612,12 @@ toolchain: zig: {
     preferred: "0.15"
 }
 
+packages: {
+    zmath: {
+        path: "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2"
+    }
+}
+
 zig_gamedev_vectormath: #Module & {
     kind: "module"
     root: "../../samples/common/src/vectormath.zig"
@@ -618,13 +628,27 @@ zig_gamedev_vectormath_probe: #Module & {
     root: "src/zig_gamedev_vectormath_probe.zig"
     deps: ["zig_gamedev_vectormath"]
     link: "import"
+    pkg_imports: [{
+        alias: "zmath"
+        package: "zmath"
+        module: "root"
+    }]
 }
 """,
             encoding="utf-8",
         )
         write_standard_export(workspace, ("zig_gamedev_vectormath", "zig_gamedev_vectormath_probe"))
+        write_workspace_zon(
+            workspace,
+            ".zig_gamedev_azazel_parity",
+            {
+                "zmath": "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
+            },
+            fingerprint="0x28185f0b3b82664a",
+        )
         (src_dir / "zig_gamedev_vectormath_probe.zig").write_text(
             """const vectormath = @import("zig_gamedev_vectormath");
+const zmath = @import("zmath");
 
 pub fn main() void {
     const a = vectormath.Vec3.init(1.0, 2.0, 3.0);
@@ -632,6 +656,7 @@ pub fn main() void {
     const dot = vectormath.Vec3.dot(a, b);
     if (dot != 32.0) @panic("unexpected vectormath result");
     _ = vectormath.Mat4.initTranslation(a);
+    _ = zmath.translation(1.0, 2.0, 3.0);
 }
 """,
             encoding="utf-8",
@@ -681,12 +706,17 @@ build: options: _options
     )
 
 
-def write_workspace_zon(workspace: Path, package_name: str, deps: dict[str, str]) -> None:
+def write_workspace_zon(
+    workspace: Path,
+    package_name: str,
+    deps: dict[str, str],
+    fingerprint: str = "0x556db0b97b71fd4c",
+) -> None:
     lines = [
         ".{",
         f"    .name = {package_name},",
         '    .version = "0.0.0",',
-        "    .fingerprint = 0x556db0b97b71fd4c,",
+        f"    .fingerprint = {fingerprint},",
         "    .dependencies = .{",
     ]
     for name, path in deps.items():
@@ -729,6 +759,15 @@ def ensure_git_package(dest: Path, url: str, ref: str) -> None:
 
 
 def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
+    if repo.name == "zig-gamedev":
+        pkg_root = path / "zig-pkg"
+        ensure_git_package(
+            pkg_root / "zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
+            "https://github.com/zig-gamedev/zmath.git",
+            "3a5955b2b72cd081563fbb084eff05bffd1e3fbb",
+        )
+        return
+
     if repo.name != "libvaxis":
         return
     pkg_root = path / "zig-pkg"

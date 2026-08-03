@@ -65,11 +65,12 @@ run the generated Zig build for any target slice marked ready.</p>
 <code>module:vaxis</code> imports local <code>zigimg</code> and <code>uucode</code> path dependencies through the
 generated parity workspace's <code>build.zig.zon</code>. <code>zig-gamedev</code> compiles the shared
 sample <code>samples/common/src/vectormath.zig</code> module through a generated
-<code>exe:zig_gamedev_vectormath_probe</code> on Zig <code>0.15.2</code>. These slices prove real
-Azazel graphs can compile upstream source, but they do not claim full
-replacement; library variants, pkg-config/manpage generation, generated Unicode
-table options, benchmarks, examples, assets, and framework link metadata remain
-tracked gaps.</p>
+<code>exe:zig_gamedev_vectormath_probe</code> on Zig <code>0.15.2</code> and imports the pinned
+<code>zmath</code> package through the parity workspace's <code>build.zig.zon</code>. These slices
+prove real Azazel graphs can compile upstream source and package dependencies,
+but they do not claim full replacement; library variants, pkg-config/manpage
+generation, generated Unicode table options, benchmarks, examples, assets, and
+framework link metadata remain tracked gaps.</p>
 
 <p>As of the current 10-repo proof plan, <code>libxev</code>, <code>libvaxis</code>, <code>zig-gamedev</code>, and
 <code>tigerbeetle</code> build successfully with their declared Zig lanes. The other corpus projects are
