@@ -71,6 +71,38 @@ fn installDir(name: []const u8) std.Build.InstallDir {
     return .{ .custom = name };
 }
 
+fn targetOsMatches(filter: ?[]const u8, target: std.Target) bool {
+    const os = filter orelse return true;
+    if (std.mem.eql(u8, os, "macos")) return target.os.tag == .macos;
+    if (std.mem.eql(u8, os, "linux")) return target.os.tag == .linux;
+    if (std.mem.eql(u8, os, "windows")) return target.os.tag == .windows;
+    if (std.mem.eql(u8, os, "emscripten")) return target.os.tag == .emscripten;
+    return false;
+}
+
+fn targetArchMatches(filter: ?[]const u8, target: std.Target) bool {
+    const arch = filter orelse return true;
+    if (std.mem.eql(u8, arch, "aarch64")) return target.cpu.arch.isAARCH64();
+    if (std.mem.eql(u8, arch, "x86_64")) return target.cpu.arch == .x86_64;
+    if (std.mem.eql(u8, arch, "x86")) return target.cpu.arch.isX86();
+    if (std.mem.eql(u8, arch, "wasm32")) return target.cpu.arch == .wasm32;
+    return false;
+}
+
+fn applyPackageLibraryPaths(
+    b: *std.Build,
+    step: *std.Build.Step.Compile,
+    paths: []const spec.PackageLibraryPath,
+    target: std.Target,
+) void {
+    for (paths) |path| {
+        if (!targetOsMatches(path.os, target)) continue;
+        if (!targetArchMatches(path.arch, target)) continue;
+        const dep = b.lazyDependency(path.package, .{}) orelse @panic("package library path dependency unavailable");
+        step.root_module.addLibraryPath(dep.path(path.path));
+    }
+}
+
 fn findOption(name: []const u8) ?spec.Option {
     for (spec.options) |option| {
         if (std.mem.eql(u8, option.name, name)) return option;
@@ -340,6 +372,7 @@ pub fn build(b: *std.Build) void {
             step.step.dependOn(&install_dir.step);
             b.getInstallStep().dependOn(&install_dir.step);
         }
+        applyPackageLibraryPaths(b, step, m.pkg_library_paths, target.result);
         steps.put(m.name, step) catch unreachable;
     }
 

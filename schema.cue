@@ -27,6 +27,13 @@ package build
 	install_subdir: string
 }
 
+#PackageLibraryPath: {
+	package: string
+	path: string | *""
+	os?: string
+	arch?: string
+}
+
 #PackageImport: {
 	alias:   string
 	package: string
@@ -80,6 +87,7 @@ package build
 	post: [...#Command] | *[]
 	pre: [...#Command] | *[]
 	install_dirs: [...#InstallDir] | *[]
+	pkg_library_paths: [...#PackageLibraryPath] | *[]
 	pkg_imports: [...#PackageImport] | *[]
 	pkg_artifacts: [...#PackageArtifact] | *[]
 	build_options: [...string] | *[]

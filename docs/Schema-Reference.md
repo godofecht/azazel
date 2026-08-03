@@ -106,6 +106,13 @@ Top-level `options` declare project options. A module lists option names in
     install_subdir: string
 }
 
+#PackageLibraryPath: {
+    package: string
+    path: string | *""
+    os?: string
+    arch?: string
+}
+
 #Package: {
     url?: string
     hash?: string
@@ -134,6 +141,10 @@ Top-level `options` declare project options. A module lists option names in
 `install_dirs` stage asset/content directories with `b.addInstallDirectory`.
 `install_dir` accepts the standard `bin`, `lib`, and `header` install roots or
 a custom install root string.
+
+`pkg_library_paths` adds library search paths from lazy package dependencies.
+Use `os` and `arch` guards for platform-specific prebuilts, for example a Dawn
+package path that should only apply to `macos`/`aarch64` targets.
 
 Top-level `packages` records package dependency intent for diagnostics and
 corpus reporting. Zig still resolves actual package dependencies from

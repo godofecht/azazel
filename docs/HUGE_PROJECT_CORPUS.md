@@ -178,8 +178,10 @@ The first executable slices are:
 - `package:zgui` is wired through a local path dependency with
   `backend: "glfw_wgpu"`
 - `artifact:zgui:imgui` links the backend-selected ImGui artifact
-- `artifact:zmesh:zmesh` and `artifact:znoise:FastNoiseLite` link exported
-  native package artifacts used by mesh/noise-heavy examples
+- `package:zgpu` and `artifact:zgpu:zdawn` cover the WGPU sample package and
+  native Dawn wrapper surface
+- `package-library-path:dawn_aarch64_macos` adds the real Dawn prebuilt package
+  library search path for macOS arm64 parity
 - `asset:sdl2_demo_content` stages the real
   `samples/sdl2_demo/sdl2_demo_content` directory into an explicit install
   prefix and verifies `zero.png` exists
@@ -239,7 +241,7 @@ Current executable Azazel parity slices:
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
 | `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `zig-api-drift` on Zig `0.16.0` | Strict install-path parity now reaches `uucode`'s generated table builder and exposes the missing generated Unicode config surface; upstream still builds successfully. |
-| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
+| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `package:zgpu`, `artifact:zgpu:zdawn`, `package-library-path:dawn_aarch64_macos`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact and `zgpu`'s Dawn wrapper, package prebuilt library paths, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
 
 ## Doctor Output
 

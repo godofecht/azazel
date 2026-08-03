@@ -87,6 +87,7 @@ CUE generates **Zig source code**, not JSON. The build system never parses anyth
 | `pre` | `[{ argv: [...] }]` | No | `[]` | Commands to run before compiling this module |
 | `post` | `[{ argv: [...] }]` | No | `[]` | Commands to run after installing this module |
 | `pkg_imports` | package import list | No | `[]` | Imports from `build.zig.zon` dependencies |
+| `pkg_library_paths` | package library path list | No | `[]` | Adds library search paths from lazy package dependencies |
 | `build_options` | `[...string]` | No | `[]` | Typed options to expose through an options module |
 | `native` | native metadata | No | `{}` | C sources, include dirs, system libs, frameworks |
 
