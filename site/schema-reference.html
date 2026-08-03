@@ -103,6 +103,7 @@ how each part behaves.</p>
 <tr><td><code>pre</code></td><td><code>[...#Command]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>post</code></td><td><code>[...#Command]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>pkg_imports</code></td><td><code>[...#PackageImport]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>pkg_artifacts</code></td><td><code>[...#PackageArtifact]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>build_options</code></td><td><code>[...string]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>build_options_import</code></td><td><code>string</code></td><td>no</td><td><code>"build-options"</code></td></tr>
 <tr><td><code>native</code></td><td><code>#Native</code></td><td>no</td><td><code>{}</code></td></tr>
@@ -167,6 +168,21 @@ corpus reporting:</p>
 followed by <code>root_module.addImport(alias, dep.module(module))</code>. Set
 <code>pass_target: false</code> or <code>pass_optimize: false</code> for package build scripts that do
 not declare those dependency options.</p>
+
+<p>Link artifacts from <code>build.zig.zon</code> package dependencies:</p>
+
+<pre data-lang="cue"><code class="language-cue">app: #Module &amp; {
+	kind: "exe"
+	root: "src/main.zig"
+	pkg_artifacts: [{
+		package: "zglfw"
+		artifact: "glfw"
+		pass_optimize: false
+	}]
+}</code></pre>
+
+<p>This maps to <code>root_module.linkLibrary(dep.artifact(artifact))</code> after resolving
+the package dependency with the same target and optimize forwarding controls.</p>
 
 <hr>
 

@@ -222,6 +222,8 @@ REPOS = [
             "exe:zig_gamedev_vectormath_probe",
             "package:zmath",
             "package:zopengl",
+            "package:zglfw",
+            "artifact:zglfw:glfw",
         ),
     ),
     Repo(
@@ -617,6 +619,9 @@ packages: {
     zmath: {
         path: "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2"
     }
+    zglfw: {
+        path: "../../zig-pkg/zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC"
+    }
     zopengl: {
         path: "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM"
     }
@@ -637,9 +642,19 @@ zig_gamedev_vectormath_probe: #Module & {
         package: "zmath"
         module: "root"
     }, {
+        alias: "zglfw"
+        package: "zglfw"
+        module: "root"
+        pass_optimize: false
+    }, {
         alias: "zopengl"
         package: "zopengl"
         module: "root"
+        pass_optimize: false
+    }]
+    pkg_artifacts: [{
+        package: "zglfw"
+        artifact: "glfw"
         pass_optimize: false
     }]
 }
@@ -652,6 +667,7 @@ zig_gamedev_vectormath_probe: #Module & {
             ".zig_gamedev_azazel_parity",
             {
                 "zmath": "../../zig-pkg/zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
+                "zglfw": "../../zig-pkg/zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC",
                 "zopengl": "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
             },
             fingerprint="0x28185f0b3b82664a",
@@ -659,6 +675,7 @@ zig_gamedev_vectormath_probe: #Module & {
         (src_dir / "zig_gamedev_vectormath_probe.zig").write_text(
             """const vectormath = @import("zig_gamedev_vectormath");
 const zmath = @import("zmath");
+const zglfw = @import("zglfw");
 const zopengl = @import("zopengl");
 
 pub fn main() void {
@@ -668,6 +685,7 @@ pub fn main() void {
     if (dot != 32.0) @panic("unexpected vectormath result");
     _ = vectormath.Mat4.initTranslation(a);
     _ = zmath.translation(1.0, 2.0, 3.0);
+    _ = zglfw.Window;
     _ = zopengl.Extension.KHR_debug;
 }
 """,
@@ -777,6 +795,11 @@ def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
             pkg_root / "zmath-0.11.0-dev-wjwivdMsAwD-xaLj76YHUq3t9JDH-X16xuMTmnDzqbu2",
             "https://github.com/zig-gamedev/zmath.git",
             "3a5955b2b72cd081563fbb084eff05bffd1e3fbb",
+        )
+        ensure_git_package(
+            pkg_root / "zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC",
+            "https://github.com/zig-gamedev/zglfw.git",
+            "0dd29d8073487c9fe1e45e6b729b3aac271d5a71",
         )
         ensure_git_package(
             pkg_root / "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",

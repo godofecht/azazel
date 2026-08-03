@@ -16,6 +16,7 @@ Every module is a `#Module` with these fields:
 | `pre` | command list | no | `[]` | Commands to run before compiling this module |
 | `post` | command list | no | `[]` | Commands to run after installing this module |
 | `pkg_imports` | package import list | no | `[]` | Imports from `build.zig.zon` dependencies |
+| `pkg_artifacts` | package artifact list | no | `[]` | Links artifacts from `build.zig.zon` dependencies |
 | `build_options` | `[...string]` | no | `[]` | Names of typed options to expose to the module |
 | `native` | native metadata | no | `{}` | C sources, include dirs, system libs, frameworks |
 
@@ -83,6 +84,28 @@ module.addImport("known-folders", dep.module("known-folders"));
 
 Set `pass_target: false` or `pass_optimize: false` on a `pkg_imports` entry
 when the package build script does not declare those dependency options.
+
+Use `pkg_artifacts` when the module must link a compiled artifact exported by a
+package dependency:
+
+```cue
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    pkg_artifacts: [{
+        package: "zglfw"
+        artifact: "glfw"
+        pass_optimize: false
+    }]
+}
+```
+
+This maps to:
+
+```zig
+const dep = b.dependency("zglfw", .{ .target = target });
+module.linkLibrary(dep.artifact("glfw"));
+```
 
 ## Build Options
 

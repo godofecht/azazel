@@ -48,6 +48,13 @@ pub const PackageImport = struct {
     pass_optimize: bool,
 };
 
+pub const PackageArtifact = struct {
+    package: []const u8,
+    artifact: []const u8,
+    pass_target: bool,
+    pass_optimize: bool,
+};
+
 pub const Native = struct {
     c_sources: []const []const u8,
     include_dirs: []const []const u8,
@@ -70,6 +77,7 @@ pub const Module = struct {
     pre: []const Command,
     post: []const Command,
     pkg_imports: []const PackageImport,
+    pkg_artifacts: []const PackageArtifact,
     build_options: []const []const u8,
     build_options_import: []const u8,
     native: Native,
@@ -197,6 +205,20 @@ def zig_pkg_imports(items):
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
 
+def zig_pkg_artifacts(items):
+    if not items:
+        return '&.{}'
+    rendered = []
+    for item in items:
+        rendered.append(
+            '.{ .package = ' + zig_string(item['package'])
+            + ', .artifact = ' + zig_string(item['artifact'])
+            + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
+            + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
+            + ' }'
+        )
+    return '&.{ ' + ', '.join(rendered) + ' }'
+
 def zig_bool(v):
     return 'true' if v else 'false'
 
@@ -239,6 +261,7 @@ for name, m in mods.items():
     pre_str = zig_commands(m.get('pre', []))
     post_str = zig_commands(m.get('post', []))
     pkg_imports_str = zig_pkg_imports(m.get('pkg_imports', []))
+    pkg_artifacts_str = zig_pkg_artifacts(m.get('pkg_artifacts', []))
     build_options_str = zig_string_list(m.get('build_options', []))
     native_str = zig_native(m.get('native', {}))
     print(f'''    .{{
@@ -250,6 +273,7 @@ for name, m in mods.items():
         .pre = {pre_str},
         .post = {post_str},
         .pkg_imports = {pkg_imports_str},
+        .pkg_artifacts = {pkg_artifacts_str},
         .build_options = {build_options_str},
         .build_options_import = {zig_string(m.get('build_options_import', 'build-options'))},
         .native = {native_str},
