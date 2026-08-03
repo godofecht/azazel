@@ -29,6 +29,13 @@ package build
 	pass_optimize: bool | *true
 }
 
+#PackageArtifact: {
+	package: string
+	artifact: string
+	pass_target: bool | *true
+	pass_optimize: bool | *true
+}
+
 #Package: {
 	url?: string
 	hash?: string
@@ -65,6 +72,7 @@ package build
 	post: [...#Command] | *[]
 	pre: [...#Command] | *[]
 	pkg_imports: [...#PackageImport] | *[]
+	pkg_artifacts: [...#PackageArtifact] | *[]
 	build_options: [...string] | *[]
 	build_options_import: string | *"build-options"
 	native: #Native | *{}

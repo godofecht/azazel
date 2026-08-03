@@ -152,6 +152,31 @@ fn dependencyForImport(
     return b.dependency(pkg_import.package, .{});
 }
 
+fn dependencyForArtifact(
+    b: *std.Build,
+    pkg_artifact: spec.PackageArtifact,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Dependency {
+    if (pkg_artifact.pass_target and pkg_artifact.pass_optimize) {
+        return b.dependency(pkg_artifact.package, .{
+            .target = target,
+            .optimize = optimize,
+        });
+    }
+    if (pkg_artifact.pass_target) {
+        return b.dependency(pkg_artifact.package, .{
+            .target = target,
+        });
+    }
+    if (pkg_artifact.pass_optimize) {
+        return b.dependency(pkg_artifact.package, .{
+            .optimize = optimize,
+        });
+    }
+    return b.dependency(pkg_artifact.package, .{});
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
@@ -184,6 +209,10 @@ pub fn build(b: *std.Build) void {
         for (m.pkg_imports) |pkg_import| {
             const dep = dependencyForImport(b, pkg_import, target, m.optimize);
             mod.addImport(pkg_import.alias, dep.module(pkg_import.module));
+        }
+        for (m.pkg_artifacts) |pkg_artifact| {
+            const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize);
+            mod.linkLibrary(dep.artifact(pkg_artifact.artifact));
         }
     }
 

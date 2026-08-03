@@ -50,6 +50,7 @@ releases. Projects can narrow the default lane list with top-level
     pre:      [...#Command] | *[]
     post:     [...#Command] | *[]
     pkg_imports: [...#PackageImport] | *[]
+    pkg_artifacts: [...#PackageArtifact] | *[]
     build_options: [...string] | *[]
     build_options_import: string | *"build-options"
     native:   #Native | *{}
@@ -112,6 +113,13 @@ Top-level `options` declare project options. A module lists option names in
     pass_target: bool | *true
     pass_optimize: bool | *true
 }
+
+#PackageArtifact: {
+    package: string
+    artifact: string
+    pass_target: bool | *true
+    pass_optimize: bool | *true
+}
 ```
 
 Top-level `packages` records package dependency intent for diagnostics and
@@ -122,6 +130,10 @@ corpus reporting. Zig still resolves actual package dependencies from
 passes the target and module optimize mode into `b.dependency`. Set
 `pass_optimize: false` or `pass_target: false` for packages whose build scripts
 do not declare those dependency options.
+
+`pkg_artifacts` link compiled artifacts exported by Zig package dependencies.
+They use the same dependency option forwarding controls, then map to
+`root_module.linkLibrary(dep.artifact(artifact))`.
 
 ## Native Metadata
 
