@@ -127,6 +127,31 @@ fn applyNative(b: *std.Build, mod: *std.Build.Module, native: spec.Native) void 
     }
 }
 
+fn dependencyForImport(
+    b: *std.Build,
+    pkg_import: spec.PackageImport,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Dependency {
+    if (pkg_import.pass_target and pkg_import.pass_optimize) {
+        return b.dependency(pkg_import.package, .{
+            .target = target,
+            .optimize = optimize,
+        });
+    }
+    if (pkg_import.pass_target) {
+        return b.dependency(pkg_import.package, .{
+            .target = target,
+        });
+    }
+    if (pkg_import.pass_optimize) {
+        return b.dependency(pkg_import.package, .{
+            .optimize = optimize,
+        });
+    }
+    return b.dependency(pkg_import.package, .{});
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
@@ -157,10 +182,7 @@ pub fn build(b: *std.Build) void {
     for (spec.modules) |m| {
         const mod = modules.get(m.name).?;
         for (m.pkg_imports) |pkg_import| {
-            const dep = b.dependency(pkg_import.package, .{
-                .target = target,
-                .optimize = m.optimize,
-            });
+            const dep = dependencyForImport(b, pkg_import, target, m.optimize);
             mod.addImport(pkg_import.alias, dep.module(pkg_import.module));
         }
     }

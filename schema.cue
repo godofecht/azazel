@@ -25,6 +25,8 @@ package build
 	alias:   string
 	package: string
 	module:  string
+	pass_target: bool | *true
+	pass_optimize: bool | *true
 }
 
 #Package: {
