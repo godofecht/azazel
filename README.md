@@ -147,6 +147,23 @@ app: #Module & {
 }
 ```
 
+Package imports and artifacts can also pass a package `backend` enum option
+when the dependency declares one:
+
+```cue
+pkg_imports: [{
+    alias: "zgui"
+    package: "zgui"
+    module: "root"
+    backend: "glfw_wgpu"
+}]
+pkg_artifacts: [{
+    package: "zgui"
+    artifact: "imgui"
+    backend: "glfw_wgpu"
+}]
+```
+
 ## Examples
 
 Four runnable projects, each self-contained with its own README.
