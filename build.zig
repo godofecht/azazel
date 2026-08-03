@@ -64,6 +64,13 @@ fn addCommand(b: *std.Build, module_name: []const u8, phase: []const u8, index: 
     return step;
 }
 
+fn installDir(name: []const u8) std.Build.InstallDir {
+    if (std.mem.eql(u8, name, "bin")) return .bin;
+    if (std.mem.eql(u8, name, "lib")) return .lib;
+    if (std.mem.eql(u8, name, "header")) return .header;
+    return .{ .custom = name };
+}
+
 fn findOption(name: []const u8) ?spec.Option {
     for (spec.options) |option| {
         if (std.mem.eql(u8, option.name, name)) return option;
@@ -249,6 +256,15 @@ pub fn build(b: *std.Build) void {
             const pre = addCommand(b, m.name, "pre", idx, cmd);
             step.step.dependOn(pre);
         }
+        for (m.install_dirs) |dir| {
+            const install_dir = b.addInstallDirectory(.{
+                .source_dir = b.path(dir.source_dir),
+                .install_dir = installDir(dir.install_dir),
+                .install_subdir = dir.install_subdir,
+            });
+            step.step.dependOn(&install_dir.step);
+            b.getInstallStep().dependOn(&install_dir.step);
+        }
         steps.put(m.name, step) catch unreachable;
     }
 
@@ -270,6 +286,7 @@ pub fn build(b: *std.Build) void {
     for (spec.modules) |m| {
         if (steps.get(m.name)) |step| {
             const install = b.addInstallArtifact(step, .{});
+            b.getInstallStep().dependOn(&install.step);
             for (m.post, 0..) |cmd, idx| {
                 const post = addPostCommand(b, m.name, idx, cmd);
                 post.dependencies.append(&install.step) catch unreachable;

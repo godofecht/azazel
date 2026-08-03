@@ -49,6 +49,7 @@ releases. Projects can narrow the default lane list with top-level
     link:     #Link | *"abi"
     pre:      [...#Command] | *[]
     post:     [...#Command] | *[]
+    install_dirs: [...#InstallDir] | *[]
     pkg_imports: [...#PackageImport] | *[]
     pkg_artifacts: [...#PackageArtifact] | *[]
     build_options: [...string] | *[]
@@ -99,6 +100,12 @@ Top-level `options` declare project options. A module lists option names in
 ## Package Imports
 
 ```cue
+#InstallDir: {
+    source_dir: string
+    install_dir: string | *"bin"
+    install_subdir: string
+}
+
 #Package: {
     url?: string
     hash?: string
@@ -121,6 +128,10 @@ Top-level `options` declare project options. A module lists option names in
     pass_optimize: bool | *true
 }
 ```
+
+`install_dirs` stage asset/content directories with `b.addInstallDirectory`.
+`install_dir` accepts the standard `bin`, `lib`, and `header` install roots or
+a custom install root string.
 
 Top-level `packages` records package dependency intent for diagnostics and
 corpus reporting. Zig still resolves actual package dependencies from

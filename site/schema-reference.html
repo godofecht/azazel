@@ -102,6 +102,7 @@ how each part behaves.</p>
 <tr><td><code>link</code></td><td><code>#Link</code></td><td>no</td><td><code>"abi"</code></td></tr>
 <tr><td><code>pre</code></td><td><code>[...#Command]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>post</code></td><td><code>[...#Command]</code></td><td>no</td><td><code>[]</code></td></tr>
+<tr><td><code>install_dirs</code></td><td><code>[...#InstallDir]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>pkg_imports</code></td><td><code>[...#PackageImport]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>pkg_artifacts</code></td><td><code>[...#PackageArtifact]</code></td><td>no</td><td><code>[]</code></td></tr>
 <tr><td><code>build_options</code></td><td><code>[...string]</code></td><td>no</td><td><code>[]</code></td></tr>
@@ -183,6 +184,21 @@ not declare those dependency options.</p>
 
 <p>This maps to <code>root_module.linkLibrary(dep.artifact(artifact))</code> after resolving
 the package dependency with the same target and optimize forwarding controls.</p>
+
+<p>Stage runtime asset directories:</p>
+
+<pre data-lang="cue"><code class="language-cue">app: #Module &amp; {
+	kind: "exe"
+	root: "src/main.zig"
+	install_dirs: [{
+		source_dir: "assets"
+		install_dir: "bin"
+		install_subdir: "assets"
+	}]
+}</code></pre>
+
+<p>This maps to <code>b.addInstallDirectory</code> and is attached to the default install
+step.</p>
 
 <hr>
 

@@ -386,6 +386,7 @@ how each part behaves.
 | `link` | `#Link` | no | `"abi"` |
 | `pre` | `[...#Command]` | no | `[]` |
 | `post` | `[...#Command]` | no | `[]` |
+| `install_dirs` | `[...#InstallDir]` | no | `[]` |
 | `pkg_imports` | `[...#PackageImport]` | no | `[]` |
 | `pkg_artifacts` | `[...#PackageArtifact]` | no | `[]` |
 | `build_options` | `[...string]` | no | `[]` |
@@ -474,6 +475,23 @@ app: #Module & {
 
 This maps to `root_module.linkLibrary(dep.artifact(artifact))` after resolving
 the package dependency with the same target and optimize forwarding controls.
+
+Stage runtime asset directories:
+
+```cue
+app: #Module & {
+	kind: "exe"
+	root: "src/main.zig"
+	install_dirs: [{
+		source_dir: "assets"
+		install_dir: "bin"
+		install_subdir: "assets"
+	}]
+}
+```
+
+This maps to `b.addInstallDirectory` and is attached to the default install
+step.
 
 ---
 
@@ -1328,17 +1346,21 @@ The first executable Azazel slices are `libxev`, `libvaxis`, and
 `module:xev` at upstream `src/main.zig` and compiling a generated
 `exe:xev_probe`. `libvaxis` adds package-backed module compilation:
 `module:vaxis` imports local `zigimg` and `uucode` path dependencies through the
-generated parity workspace's `build.zig.zon`. `zig-gamedev` compiles the shared
+generated parity workspace's `build.zig.zon`, but strict install-path parity now
+reaches `uucode`'s generated table builder and exposes the missing generated
+Unicode config surface. `zig-gamedev` compiles the shared
 sample `samples/common/src/vectormath.zig` module through a generated
 `exe:zig_gamedev_vectormath_probe` on Zig `0.15.2` and imports the pinned
 `zmath`, `zopengl`, `zglfw`, `zmesh`, and `znoise` packages through the parity
 workspace's `build.zig.zon`. The `zglfw`, `zmesh`, and `znoise` slices also
 link their exported native artifacts, which proves package artifact linking
-plus native/framework metadata traversal. These slices prove real Azazel graphs
-can compile upstream source and package dependencies, but they do not claim full
-replacement; library variants, pkg-config/manpage
-generation, generated Unicode table options, benchmarks, examples, assets, and
-full example selection remain tracked gaps.
+plus native/framework metadata traversal. The parity runner also stages
+`samples/sdl2_demo/sdl2_demo_content` into an explicit install prefix and checks
+for `zero.png`. These slices prove real Azazel graphs can compile upstream
+source, package dependencies, native package artifacts, and runtime asset
+directories, but they do not claim full replacement; library variants,
+pkg-config/manpage generation, generated Unicode table options, benchmarks,
+examples, and full example selection remain tracked gaps.
 
 As of the current 10-repo proof plan, `libxev`, `libvaxis`, `zig-gamedev`, and
 `tigerbeetle` build successfully with their declared Zig lanes. The other corpus projects are
