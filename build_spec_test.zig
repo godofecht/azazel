@@ -85,6 +85,8 @@ test "package imports name an alias, package, and module" {
             try testing.expect(pkg.alias.len > 0);
             try testing.expect(pkg.package.len > 0);
             try testing.expect(pkg.module.len > 0);
+            _ = pkg.pass_target;
+            _ = pkg.pass_optimize;
         }
         for (m.build_options) |option_name| {
             try testing.expect(option_name.len > 0);

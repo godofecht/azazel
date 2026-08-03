@@ -44,6 +44,8 @@ pub const PackageImport = struct {
     alias: []const u8,
     package: []const u8,
     module: []const u8,
+    pass_target: bool,
+    pass_optimize: bool,
 };
 
 pub const Native = struct {
@@ -189,6 +191,8 @@ def zig_pkg_imports(items):
             '.{ .alias = ' + zig_string(item['alias'])
             + ', .package = ' + zig_string(item['package'])
             + ', .module = ' + zig_string(item['module'])
+            + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
+            + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
             + ' }'
         )
     return '&.{ ' + ', '.join(rendered) + ' }'

@@ -188,8 +188,8 @@ The corpus runner also has an executable parity lane:
 repo-local `.azazel/parity-work/` workspace and runs modeled target slices
 against upstream source. The ready slices cover the `libxev` module probe,
 `libvaxis` package-backed module probe, and `zig-gamedev` shared vectormath
-module plus pinned `zmath` package probe. `libvaxis` resolves local `zigimg`
-and `uucode` path dependencies through the generated parity workspace.
+module plus pinned `zmath`/`zopengl` package probe. `libvaxis` resolves local
+`zigimg` and `uucode` path dependencies through the generated parity workspace.
 Use `tools/huge_corpus.py --plan --expect-count 10` before a full batch run to
 write `corpus-plan.json` and verify that all ten tracked forks are selected.
 Use `tools/huge_corpus.py --roadmap --expect-count 10` to generate

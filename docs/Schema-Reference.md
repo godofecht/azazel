@@ -81,32 +81,6 @@ toolchain: zig: {
 The generator emits these lanes into `build_spec.zig`; `build.zig` rejects an
 unsupported host Zig lane before doing dependency or compilation work.
 
-## Package Imports
-
-```cue
-#Package: {
-    url?: string
-    hash?: string
-    path?: string
-    lazy: bool | *false
-}
-```
-
-Top-level `packages` records package dependency intent for diagnostics and
-corpus reporting. Zig still resolves actual package dependencies from
-`build.zig.zon`.
-
-```cue
-#PackageImport: {
-    alias:   string
-    package: string
-    module:  string
-}
-```
-
-`package` names a `build.zig.zon` dependency, `module` names the module exported
-by that dependency, and `alias` is the name used by `@import`.
-
 ## Build Options
 
 ```cue
@@ -120,6 +94,34 @@ by that dependency, and `alias` is the name used by `@import`.
 
 Top-level `options` declare project options. A module lists option names in
 `build_options` to receive them through `build_options_import`.
+
+## Package Imports
+
+```cue
+#Package: {
+    url?: string
+    hash?: string
+    path?: string
+    lazy: bool | *false
+}
+
+#PackageImport: {
+    alias: string
+    package: string
+    module: string
+    pass_target: bool | *true
+    pass_optimize: bool | *true
+}
+```
+
+Top-level `packages` records package dependency intent for diagnostics and
+corpus reporting. Zig still resolves actual package dependencies from
+`build.zig.zon`.
+
+`pkg_imports` attach modules from Zig package dependencies. By default Azazel
+passes the target and module optimize mode into `b.dependency`. Set
+`pass_optimize: false` or `pass_target: false` for packages whose build scripts
+do not declare those dependency options.
 
 ## Native Metadata
 

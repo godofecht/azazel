@@ -158,11 +158,15 @@ corpus reporting:</p>
 		alias: "known-folders"
 		package: "known_folders"
 		module: "known-folders"
+		pass_target: true
+		pass_optimize: true
 	}]
 }</code></pre>
 
 <p>This maps to <code>b.dependency(package, .{ .target = target, .optimize = optimize })</code>
-followed by <code>root_module.addImport(alias, dep.module(module))</code>.</p>
+followed by <code>root_module.addImport(alias, dep.module(module))</code>. Set
+<code>pass_target: false</code> or <code>pass_optimize: false</code> for package build scripts that do
+not declare those dependency options.</p>
 
 <hr>
 
