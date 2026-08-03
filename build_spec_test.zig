@@ -92,12 +92,20 @@ test "package imports and artifacts name their package surfaces" {
             try testing.expect(pkg.module.len > 0);
             _ = pkg.pass_target;
             _ = pkg.pass_optimize;
+            _ = pkg.backend;
         }
         for (m.pkg_artifacts) |pkg| {
             try testing.expect(pkg.package.len > 0);
             try testing.expect(pkg.artifact.len > 0);
             _ = pkg.pass_target;
             _ = pkg.pass_optimize;
+            _ = pkg.backend;
+        }
+        for (m.pkg_library_paths) |path| {
+            try testing.expect(path.package.len > 0);
+            _ = path.path;
+            _ = path.os;
+            _ = path.arch;
         }
         for (m.build_options) |option_name| {
             try testing.expect(option_name.len > 0);

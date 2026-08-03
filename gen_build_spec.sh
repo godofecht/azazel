@@ -24,6 +24,13 @@ pub const InstallDir = struct {
     install_subdir: []const u8,
 };
 
+pub const PackageLibraryPath = struct {
+    package: []const u8,
+    path: []const u8,
+    os: ?[]const u8,
+    arch: ?[]const u8,
+};
+
 pub const Toolchain = struct {
     zig_lanes: []const []const u8,
     preferred_zig_lane: []const u8,
@@ -85,6 +92,7 @@ pub const Module = struct {
     pre: []const Command,
     post: []const Command,
     install_dirs: []const InstallDir,
+    pkg_library_paths: []const PackageLibraryPath,
     pkg_imports: []const PackageImport,
     pkg_artifacts: []const PackageArtifact,
     build_options: []const []const u8,
@@ -215,6 +223,20 @@ def zig_install_dirs(items):
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
 
+def zig_pkg_library_paths(items):
+    if not items:
+        return '&.{}'
+    rendered = []
+    for item in items:
+        rendered.append(
+            '.{ .package = ' + zig_string(item['package'])
+            + ', .path = ' + zig_string(item.get('path', ''))
+            + ', .os = ' + zig_optional_string(item.get('os'))
+            + ', .arch = ' + zig_optional_string(item.get('arch'))
+            + ' }'
+        )
+    return '&.{ ' + ', '.join(rendered) + ' }'
+
 def zig_pkg_imports(items):
     if not items:
         return '&.{}'
@@ -288,6 +310,7 @@ for name, m in mods.items():
     pre_str = zig_commands(m.get('pre', []))
     post_str = zig_commands(m.get('post', []))
     install_dirs_str = zig_install_dirs(m.get('install_dirs', []))
+    pkg_library_paths_str = zig_pkg_library_paths(m.get('pkg_library_paths', []))
     pkg_imports_str = zig_pkg_imports(m.get('pkg_imports', []))
     pkg_artifacts_str = zig_pkg_artifacts(m.get('pkg_artifacts', []))
     build_options_str = zig_string_list(m.get('build_options', []))
@@ -301,6 +324,7 @@ for name, m in mods.items():
         .pre = {pre_str},
         .post = {post_str},
         .install_dirs = {install_dirs_str},
+        .pkg_library_paths = {pkg_library_paths_str},
         .pkg_imports = {pkg_imports_str},
         .pkg_artifacts = {pkg_artifacts_str},
         .build_options = {build_options_str},
