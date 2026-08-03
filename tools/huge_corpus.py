@@ -230,6 +230,9 @@ REPOS = [
             "artifact:zmesh:zmesh",
             "package:znoise",
             "artifact:znoise:FastNoiseLite",
+            "package:zgui",
+            "artifact:zgui:imgui",
+            "package-option:zgui:backend=glfw_wgpu",
             "asset:sdl2_demo_content",
         ),
         executable_parity_install_checks=(
@@ -644,6 +647,9 @@ packages: {
     znoise: {
         path: "../../zig-pkg/znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7"
     }
+    zgui: {
+        path: "../../zig-pkg/zgui-0.6.0-dev--L6sZKkSbgCUBXLVfwJDPpMkETz7ll-mmQYQae-nMxjt"
+    }
 }
 
 zig_gamedev_vectormath: #Module & {
@@ -678,6 +684,11 @@ zig_gamedev_vectormath_probe: #Module & {
         alias: "znoise"
         package: "znoise"
         module: "root"
+    }, {
+        alias: "zgui"
+        package: "zgui"
+        module: "root"
+        backend: "glfw_wgpu"
     }]
     pkg_artifacts: [{
         package: "zglfw"
@@ -689,6 +700,10 @@ zig_gamedev_vectormath_probe: #Module & {
     }, {
         package: "znoise"
         artifact: "FastNoiseLite"
+    }, {
+        package: "zgui"
+        artifact: "imgui"
+        backend: "glfw_wgpu"
     }]
     install_dirs: [{
         source_dir: "../../samples/sdl2_demo/sdl2_demo_content"
@@ -709,6 +724,7 @@ zig_gamedev_vectormath_probe: #Module & {
                 "zopengl": "../../zig-pkg/zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
                 "zmesh": "../../zig-pkg/zmesh-0.11.0-dev-oO3A5lKRCgCGK8Krro4Rj_F_MhO8LT487re5u_DNIzvl",
                 "znoise": "../../zig-pkg/znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7",
+                "zgui": "../../zig-pkg/zgui-0.6.0-dev--L6sZKkSbgCUBXLVfwJDPpMkETz7ll-mmQYQae-nMxjt",
             },
             fingerprint="0x28185f0b3b82664a",
         )
@@ -719,6 +735,7 @@ const zglfw = @import("zglfw");
 const zopengl = @import("zopengl");
 const zmesh = @import("zmesh");
 const znoise = @import("znoise");
+const zgui = @import("zgui");
 
 pub fn main() void {
     const a = vectormath.Vec3.init(1.0, 2.0, 3.0);
@@ -731,6 +748,8 @@ pub fn main() void {
     _ = zopengl.Extension.KHR_debug;
     _ = zmesh.io;
     _ = znoise.FnlGenerator;
+    _ = zgui.backend;
+    _ = zgui.DrawVert;
 }
 """,
             encoding="utf-8",
@@ -861,6 +880,11 @@ def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
             pkg_root / "znoise-0.3.0-dev-gK1op9ikAQDrS4G22GluyaQaabjGzhdnhV2QyCoLE8z7",
             "https://github.com/zig-gamedev/znoise.git",
             "01c8b354cc3ef7f2293de75e58d3298a77d7ed06",
+        )
+        ensure_git_package(
+            pkg_root / "zgui-0.6.0-dev--L6sZKkSbgCUBXLVfwJDPpMkETz7ll-mmQYQae-nMxjt",
+            "https://github.com/zig-gamedev/zgui.git",
+            "ce016156a8520c438e886cd6c0b605e10ee7af3d",
         )
         return
 

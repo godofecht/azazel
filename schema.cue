@@ -33,6 +33,7 @@ package build
 	module:  string
 	pass_target: bool | *true
 	pass_optimize: bool | *true
+	backend?: string
 }
 
 #PackageArtifact: {
@@ -40,6 +41,7 @@ package build
 	artifact: string
 	pass_target: bool | *true
 	pass_optimize: bool | *true
+	backend?: string
 }
 
 #Package: {

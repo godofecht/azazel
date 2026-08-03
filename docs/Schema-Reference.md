@@ -119,6 +119,7 @@ Top-level `options` declare project options. A module lists option names in
     module: string
     pass_target: bool | *true
     pass_optimize: bool | *true
+    backend?: string
 }
 
 #PackageArtifact: {
@@ -126,6 +127,7 @@ Top-level `options` declare project options. A module lists option names in
     artifact: string
     pass_target: bool | *true
     pass_optimize: bool | *true
+    backend?: string
 }
 ```
 
@@ -145,6 +147,10 @@ do not declare those dependency options.
 `pkg_artifacts` link compiled artifacts exported by Zig package dependencies.
 They use the same dependency option forwarding controls, then map to
 `root_module.linkLibrary(dep.artifact(artifact))`.
+
+Set `backend` on a package import or artifact when the dependency exposes a
+`backend` enum option, for example `backend: "glfw_wgpu"` for `zgui`. Azazel
+passes it as `.backend = .glfw_wgpu` on the generated `b.dependency` call.
 
 ## Native Metadata
 

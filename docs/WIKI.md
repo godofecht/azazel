@@ -457,7 +457,23 @@ app: #Module & {
 This maps to `b.dependency(package, .{ .target = target, .optimize = optimize })`
 followed by `root_module.addImport(alias, dep.module(module))`. Set
 `pass_target: false` or `pass_optimize: false` for package build scripts that do
-not declare those dependency options.
+not declare those dependency options. Set `backend` when a dependency exposes a
+`backend` enum option; Azazel emits that as `.backend = .glfw_wgpu` on the
+generated `b.dependency` call.
+
+```cue
+pkg_imports: [{
+	alias: "zgui"
+	package: "zgui"
+	module: "root"
+	backend: "glfw_wgpu"
+}]
+pkg_artifacts: [{
+	package: "zgui"
+	artifact: "imgui"
+	backend: "glfw_wgpu"
+}]
+```
 
 Link artifacts from `build.zig.zon` package dependencies:
 

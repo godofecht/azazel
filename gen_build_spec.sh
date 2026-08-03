@@ -52,6 +52,7 @@ pub const PackageImport = struct {
     module: []const u8,
     pass_target: bool,
     pass_optimize: bool,
+    backend: ?[]const u8,
 };
 
 pub const PackageArtifact = struct {
@@ -59,6 +60,7 @@ pub const PackageArtifact = struct {
     artifact: []const u8,
     pass_target: bool,
     pass_optimize: bool,
+    backend: ?[]const u8,
 };
 
 pub const Native = struct {
@@ -184,6 +186,9 @@ import json, sys
 def zig_string(s):
     return json.dumps(s)
 
+def zig_optional_string(s):
+    return 'null' if s is None else zig_string(s)
+
 def zig_string_list(items):
     if items:
         return '&.{ ' + ', '.join(zig_string(item) for item in items) + ' }'
@@ -221,6 +226,7 @@ def zig_pkg_imports(items):
             + ', .module = ' + zig_string(item['module'])
             + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
             + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
+            + ', .backend = ' + zig_optional_string(item.get('backend'))
             + ' }'
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
@@ -235,6 +241,7 @@ def zig_pkg_artifacts(items):
             + ', .artifact = ' + zig_string(item['artifact'])
             + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
             + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
+            + ', .backend = ' + zig_optional_string(item.get('backend'))
             + ' }'
         )
     return '&.{ ' + ', '.join(rendered) + ' }'

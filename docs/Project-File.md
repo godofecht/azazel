@@ -85,6 +85,9 @@ module.addImport("known-folders", dep.module("known-folders"));
 
 Set `pass_target: false` or `pass_optimize: false` on a `pkg_imports` entry
 when the package build script does not declare those dependency options.
+Set `backend: "glfw_wgpu"` when a package dependency exposes a `backend`
+enum option and must be selected at dependency time. Azazel passes the same
+backend value to package imports and package artifacts.
 
 Use `pkg_artifacts` when the module must link a compiled artifact exported by a
 package dependency:
@@ -106,6 +109,23 @@ This maps to:
 ```zig
 const dep = b.dependency("zglfw", .{ .target = target });
 module.linkLibrary(dep.artifact("glfw"));
+```
+
+For packages such as `zgui` that export both a module and a native artifact,
+put the same `backend` value on both entries:
+
+```cue
+pkg_imports: [{
+    alias: "zgui"
+    package: "zgui"
+    module: "root"
+    backend: "glfw_wgpu"
+}]
+pkg_artifacts: [{
+    package: "zgui"
+    artifact: "imgui"
+    backend: "glfw_wgpu"
+}]
 ```
 
 Use `install_dirs` to stage runtime assets:
