@@ -81,6 +81,7 @@ CUE generates **Zig source code**, not JSON. The build system never parses anyth
 |-------|------|----------|---------|-------------|
 | `kind` | `"exe"` \| `"static"` \| `"shared"` \| `"module"` | Yes | — | Output type |
 | `root` | `string` | Yes | — | Root source file |
+| `artifact_name` | `string` | No | module key | Name of the produced artifact when it should differ from the module key |
 | `deps` | `[...string]` | No | `[]` | Module dependencies |
 | `profile` | `"debug"` \| `"release"` | No | `"debug"` | Optimization level |
 | `link` | `"abi"` \| `"import"` | No | `"abi"` | How dependents consume this module |
