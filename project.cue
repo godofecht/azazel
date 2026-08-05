@@ -10,6 +10,15 @@ core: #Module & {
 	root: "src/core.zig"
 }
 
+// A static library built from the same source as the `core` module. Its
+// artifact is named `core` (libcore.a) even though its graph key is `core_lib`,
+// the decoupling from issue #36.
+core_lib: #Module & {
+	kind:          "static"
+	root:          "src/core.zig"
+	artifact_name: "core"
+}
+
 app: #Module & {
 	kind:    "exe"
 	root:    "src/main.zig"

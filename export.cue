@@ -2,6 +2,7 @@ package build
 
 _modules: {
 	"core":        core
+	"core_lib":    core_lib
 	"app":         app
 	"danzig":      danzig
 	"danzig_gain": danzig_gain
@@ -16,6 +17,9 @@ build: modules: {
 	for k, v in _modules {
 		(k): {
 			kind:     v.kind
+			// artifact_name defaults to the module key and is overridden when the
+			// module sets it explicitly.
+			artifact_name: (v & {artifact_name: *k | string}).artifact_name
 			root:     v.root
 			deps:     v.deps
 			link:     v.link

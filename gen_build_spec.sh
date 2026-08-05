@@ -85,6 +85,7 @@ pub const Native = struct {
 
 pub const Module = struct {
     name: []const u8,
+    artifact_name: []const u8,
     kind: Kind,
     root: []const u8,
     deps: []const []const u8,
@@ -317,6 +318,7 @@ for name, m in mods.items():
     native_str = zig_native(m.get('native', {}))
     print(f'''    .{{
         .name = {zig_string(name)},
+        .artifact_name = {zig_string(m.get('artifact_name', name))},
         .kind = {kind},
         .root = {zig_string(m['root'])},
         .deps = {deps_str},

@@ -19,6 +19,7 @@ Source: <https://github.com/godofecht/azazel>
   - [`#Module`](#module)
   - [`kind`](#kind)
   - [`root`](#root)
+  - [`artifact_name`](#artifact_name)
   - [`deps`](#deps)
   - [`link`](#link)
   - [`profile`](#profile)
@@ -337,6 +338,7 @@ package build
 #Module: {
 	kind:     #Kind
 	root:     string
+	artifact_name?: string
 	deps: [...string] | *[]
 	profile:  #Profile | *"debug"
 	link:     #Link | *"abi"
@@ -381,6 +383,7 @@ how each part behaves.
 |-------|------|----------|---------|
 | `kind` | `#Kind` | yes | none |
 | `root` | `string` | yes | none |
+| `artifact_name` | `string` | no | module key |
 | `deps` | `[...string]` | no | `[]` |
 | `profile` | `#Profile` | no | `"debug"` |
 | `link` | `#Link` | no | `"abi"` |
@@ -402,8 +405,10 @@ A module is declared by unifying with it:
 name: #Module & { ... }
 ```
 
-The CUE field name becomes the module name, which becomes the artifact name.
-`core` produces `libcore.a`; `app` produces `app`.
+The CUE field name becomes the module name, which is also the artifact name by
+default. `core` produces `libcore.a`; `app` produces `app`. Set
+[`artifact_name`](#artifact_name) to name the artifact independently of the
+module key.
 
 ---
 
@@ -728,6 +733,39 @@ app.root: conflicting values 42 and string (mismatched types int and string):
     ./project.cue:6:8
     ./schema.cue:8:12
 ```
+
+---
+
+### `artifact_name`
+
+Optional, `string`, default the module key. It names the produced artifact when
+that name should differ from the module's graph and `@import` name.
+
+The module key is used for two things at once: the artifact the build emits and
+the name dependents reach it by. They are usually the same. Some projects need
+them to differ. A module named `xev` (root `src/main.zig`, consumed by
+`@import("xev")`) can sit beside a static library whose artifact is also `xev`
+(`libxev.a`, root `src/c_api.zig`). In a flat namespace the two keys must be
+distinct, so give the library a distinct key and set `artifact_name` back to the
+real artifact name:
+
+```cue
+xev: #Module & {
+	kind: "module"
+	root: "src/main.zig"
+}
+
+xev_lib: #Module & {
+	kind:          "static"
+	root:          "src/c_api.zig"
+	artifact_name: "xev"
+}
+```
+
+`xev` stays the import name; `xev_lib` produces `libxev.a`. The module map in
+`build.zig` stays keyed by the module name, so `deps` still reference
+`xev_lib`. Only `addExecutable`/`addLibrary` read `artifact_name` for the
+output name.
 
 ---
 
@@ -1202,7 +1240,8 @@ The field-by-field correspondence:
 
 | Spec field | Source | Used by `build.zig` as |
 |------------|--------|----------------------|
-| `.name` | the key in `_modules` | artifact name, hash-map key |
+| `.name` | the key in `_modules` | hash-map key, the `@import` name |
+| `.artifact_name` | `artifact_name`, else the key | `.name` on `addExecutable`/`addLibrary` |
 | `.kind` | `kind` | the `switch` that picks `addExecutable` or `addLibrary` |
 | `.root` | `root` | `b.path(m.root)` as `root_source_file` |
 | `.deps` | `deps` | names looked up in the hash map, then `linkLibrary` |
