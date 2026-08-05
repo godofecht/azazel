@@ -243,6 +243,29 @@ Current executable Azazel parity slices:
 | `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `zig-api-drift` on Zig `0.16.0` | Strict install-path parity now reaches `uucode`'s generated table builder and exposes the missing generated Unicode config surface; upstream still builds successfully. |
 | `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `package:zgpu`, `artifact:zgpu:zdawn`, `package-library-path:dawn_aarch64_macos`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact and `zgpu`'s Dawn wrapper, package prebuilt library paths, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
 
+## Toolchain Resolution
+
+The runner is host-portable: `--doctor`, `--build`, `--parity`, and
+`--executable-parity` all resolve the Zig binary for a repo's declared lane the
+same way, in this order:
+
+1. A per-version override env var, e.g. `AZAZEL_ZIG_0160` for `0.16.0` or
+   `AZAZEL_ZIG_MACH2026410` for `mach-2026.4.10` (non-alphanumerics stripped,
+   uppercased).
+2. A managed toolchain under `AZAZEL_TOOLCHAIN_ROOT` (defaults to `.toolchains/`
+   beside the repo), matched against the **running host** platform first —
+   `zig-<arch>-<os>-<version>/zig` (e.g. `zig-x86_64-linux-0.16.0/zig`,
+   `zig-aarch64-macos-0.16.0/zig`), then any `zig-*-<version>/zig` directory.
+   Dev lanes match the newest `zig-*-<base>.0-dev.*` directory.
+3. A version-suffixed binary on `PATH`, e.g. `zig-0.16.0`.
+4. The generic `AZAZEL_ZIG` override, then a plain `zig` on `PATH` for the
+   `host` lane.
+
+Arch/OS are detected from the host, so the same `.toolchains/` layout works on
+macOS (`aarch64`/`x86_64`), Linux (`x86_64`/`aarch64`), and Windows
+(`zig.exe`). When no toolchain resolves, doctor reports `missing: zig:<lane>`
+and build classifies `missing-toolchain` rather than failing the run.
+
 ## Doctor Output
 
 `tools/huge_corpus.py --doctor` answers "can this host run the declared proof

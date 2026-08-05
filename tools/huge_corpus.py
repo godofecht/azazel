@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -305,29 +306,85 @@ def toolchain_root() -> Path:
     return Path(os.environ.get("AZAZEL_TOOLCHAIN_ROOT", Path(__file__).resolve().parents[2] / ".toolchains"))
 
 
+def host_zig_platform() -> str:
+    """Zig-style ``<arch>-<os>`` token for the running host, e.g. ``x86_64-linux``."""
+    machine = platform.machine().lower()
+    arch = {
+        "x86_64": "x86_64",
+        "amd64": "x86_64",
+        "x64": "x86_64",
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+    }.get(machine, machine)
+    system = platform.system().lower()
+    os_name = {"darwin": "macos", "linux": "linux", "windows": "windows"}.get(system, system)
+    return f"{arch}-{os_name}"
+
+
+def zig_binary_name() -> str:
+    return "zig.exe" if platform.system().lower() == "windows" else "zig"
+
+
+def _toolchain_candidates(version: str) -> list[Path]:
+    """Managed-toolchain paths for ``version`` under the toolchain root.
+
+    Host-portable: the running platform is tried first, then the other known
+    desktop platforms, then any ``zig-*-<version>`` directory. Supports the
+    current ``zig-<arch>-<os>-<version>`` archive naming and a bare
+    ``zig-<version>`` layout.
+    """
+    root = toolchain_root()
+    binary = zig_binary_name()
+    plats = [
+        host_zig_platform(),
+        "aarch64-macos",
+        "x86_64-macos",
+        "x86_64-linux",
+        "aarch64-linux",
+        "x86_64-windows",
+    ]
+    names: list[str] = []
+    seen: set[str] = set()
+    for plat in plats:
+        if plat in seen:
+            continue
+        seen.add(plat)
+        names.append(f"zig-{plat}-{version}")
+    names.append(f"zig-{version}")
+    candidates = [root / name / binary for name in names]
+    candidates.extend(sorted(root.glob(f"zig-*-{version}/{binary}")))
+    return candidates
+
+
 def zig_for(version: str) -> str:
+    # 1. Explicit per-version override, e.g. AZAZEL_ZIG_0160 / AZAZEL_ZIG_MACH2026410.
     env_key = "AZAZEL_ZIG_" + "".join(ch for ch in version.upper() if ch.isalnum())
     if os.environ.get(env_key):
         return os.environ[env_key]
 
-    known = {
-        "0.14.1": Path("/Users/abhishekshivakumar/zig/0.14.1/zig"),
-        "0.15.2": toolchain_root() / "zig-aarch64-macos-0.15.2" / "zig",
-        "0.16.0": toolchain_root() / "zig-aarch64-macos-0.16.0" / "zig",
-        "0.17-dev": toolchain_root() / "zig-aarch64-macos-0.17-dev" / "zig",
-        "mach-2026.4.10": toolchain_root() / "zig-mach-2026.4.10" / "zig",
-    }
-    candidate = known.get(version)
-    if candidate and candidate.exists():
-        return str(candidate)
-    if version == "0.17-dev":
-        matches = sorted(toolchain_root().glob("zig-aarch64-macos-0.17.0-dev.*/zig"))
+    # 2. A managed toolchain under AZAZEL_TOOLCHAIN_ROOT (.toolchains by default),
+    #    resolved against the running host platform first for portability.
+    for candidate in _toolchain_candidates(version):
+        if candidate.exists():
+            return str(candidate)
+
+    # 3. Dev/nightly lanes: newest matching 'zig-*-<base>.0-dev.*' directory.
+    if "dev" in version:
+        base = version.split("-dev")[0]
+        binary = zig_binary_name()
+        matches = sorted(toolchain_root().glob(f"zig-*-{base}.0-dev.*/{binary}"))
+        matches += sorted(toolchain_root().glob(f"zig-*-{base}-dev.*/{binary}"))
         if matches:
             return str(matches[-1])
 
+    # 4. A version-suffixed binary on PATH, e.g. 'zig-0.16.0'.
     named = shutil.which(f"zig-{version}")
     if named:
         return named
+
+    # 5. Generic single-toolchain override, then the plain host 'zig'.
+    if os.environ.get("AZAZEL_ZIG"):
+        return os.environ["AZAZEL_ZIG"]
     if version == "host":
         return shutil.which("zig") or "zig"
     return ""
