@@ -342,18 +342,21 @@ pub fn build(b: *std.Build) void {
         if (!needs_artifact) continue;
 
         const mod = modules.get(m.name).?;
+        // The module map stays keyed by the module name (the graph and @import
+        // name). Only the produced artifact takes artifact_name, which defaults
+        // to the module name when the project does not override it.
         const step = switch (m.kind) {
             .exe => b.addExecutable(.{
-                .name = m.name,
+                .name = m.artifact_name,
                 .root_module = mod,
             }),
             .static => b.addLibrary(.{
-                .name = m.name,
+                .name = m.artifact_name,
                 .root_module = mod,
                 .linkage = .static,
             }),
             .shared => b.addLibrary(.{
-                .name = m.name,
+                .name = m.artifact_name,
                 .root_module = mod,
                 .linkage = .dynamic,
             }),

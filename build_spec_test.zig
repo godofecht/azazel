@@ -126,6 +126,32 @@ test "module names are unique" {
     }
 }
 
+test "artifact_name defaults to the module name" {
+    // Every module names an artifact. Unless the project overrides it, the
+    // artifact name mirrors the module key, so a module built without an
+    // explicit artifact_name still produces `name`/`libname.a`.
+    for (spec.modules) |m| {
+        try testing.expect(m.artifact_name.len > 0);
+        if (!std.mem.eql(u8, m.name, "core_lib")) {
+            try testing.expectEqualStrings(m.name, m.artifact_name);
+        }
+    }
+}
+
+test "artifact_name can be overridden" {
+    // core_lib decouples its produced artifact (libcore.a) from its graph and
+    // @import name (core_lib), the case from issue #36.
+    var found = false;
+    for (spec.modules) |m| {
+        if (std.mem.eql(u8, m.name, "core_lib")) {
+            found = true;
+            try testing.expectEqualStrings("core", m.artifact_name);
+            try testing.expect(!std.mem.eql(u8, m.name, m.artifact_name));
+        }
+    }
+    try testing.expect(found);
+}
+
 // --- dependency graph ------------------------------------------------------
 
 fn hasModule(name: []const u8) bool {

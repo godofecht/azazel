@@ -81,6 +81,13 @@ package build
 #Module: {
 	kind:     #Kind
 	root:     string
+
+	// The produced artifact's name. Defaults to the module key. Set it when the
+	// built exe or library should carry a name distinct from the module's graph
+	// and `@import` name, e.g. a static `lib:xev` alongside a `module:xev`
+	// import that both compile from one project.
+	artifact_name?: string
+
 	deps: [...string] | *[]
 	profile:  #Profile | *"debug"
 	link:     #Link | *"abi"
