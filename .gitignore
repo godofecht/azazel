@@ -5,3 +5,5 @@ zig-cache/
 .zig-cache-global-*/
 build_spec.zig
 tools/huge_corpus/audit-results.json
+__pycache__/
+*.pyc
