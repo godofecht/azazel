@@ -113,8 +113,13 @@ fn findOption(name: []const u8) ?spec.Option {
     return null;
 }
 
-fn addBuildOptions(b: *std.Build, module_name: []const u8, option_names: []const []const u8) ?*std.Build.Step.Options {
-    if (option_names.len == 0) return null;
+fn addBuildOptions(
+    b: *std.Build,
+    module_name: []const u8,
+    option_names: []const []const u8,
+    option_values: []const spec.OptionValue,
+) ?*std.Build.Step.Options {
+    if (option_names.len == 0 and option_values.len == 0) return null;
 
     const options = b.addOptions();
     for (option_names) |name| {
@@ -132,6 +137,30 @@ fn addBuildOptions(b: *std.Build, module_name: []const u8, option_names: []const
                 const value = b.option(u32, option.name, option.description) orelse (option.u32_default orelse 0);
                 options.addOption(u32, option.name, value);
             },
+        }
+    }
+
+    // Injected literal values, for options modules a repo's build.zig would
+    // normally synthesize (e.g. tigerbeetle's vsr_options).
+    for (option_values) |ov| {
+        if (std.mem.eql(u8, ov.kind, "bool")) {
+            options.addOption(bool, ov.name, ov.bool_value);
+        } else if (std.mem.eql(u8, ov.kind, "string")) {
+            options.addOption([]const u8, ov.name, ov.string_value);
+        } else if (std.mem.eql(u8, ov.kind, "u32")) {
+            options.addOption(u32, ov.name, ov.u32_value);
+        } else if (std.mem.eql(u8, ov.kind, "opt_commit")) {
+            // A ?[40]u8 git commit hash: the 40-char value, or null.
+            if (ov.commit_value) |commit| {
+                var buf: [40]u8 = undefined;
+                if (commit.len != 40) @panic("opt_commit value must be exactly 40 characters");
+                @memcpy(&buf, commit[0..40]);
+                options.addOption(?[40]u8, ov.name, buf);
+            } else {
+                options.addOption(?[40]u8, ov.name, null);
+            }
+        } else {
+            @panic("unsupported option_value kind");
         }
     }
 
@@ -362,7 +391,7 @@ pub fn build(b: *std.Build) void {
             .optimize = m.optimize,
         });
         applyNative(b, mod, m.native);
-        if (addBuildOptions(b, m.name, m.build_options)) |options| {
+        if (addBuildOptions(b, m.name, m.build_options, m.option_values)) |options| {
             mod.addOptions(m.build_options_import, options);
         }
         modules.put(m.name, mod) catch unreachable;

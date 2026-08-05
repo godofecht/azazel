@@ -57,6 +57,22 @@ package build
 	backend?: string
 }
 
+// A literal, typed value injected into a module's build-options module (the
+// one imported under build_options_import). Unlike #Option, which surfaces a
+// CLI flag, an #OptionValue is a fixed value the build config supplies so a
+// module that does @import("<options>") compiles without the project's own
+// build.zig. Used to reproduce generated options like tigerbeetle's
+// vsr_options. `kind` selects which typed field is emitted.
+#OptionValue: {
+	name: string
+	kind: "bool" | "string" | "u32" | "opt_commit"
+	bool_value:   bool | *false
+	string_value: string | *""
+	u32_value:    uint32 | *0
+	// opt_commit emits a ?[40]u8: a 40-char hex string, or "" for null.
+	commit: string | *""
+}
+
 #Package: {
 	url?: string
 	hash?: string
@@ -104,6 +120,7 @@ package build
 	pkg_imports: [...#PackageImport] | *[]
 	pkg_artifacts: [...#PackageArtifact] | *[]
 	build_options: [...string] | *[]
+	option_values: [...#OptionValue] | *[]
 	build_options_import: string | *"build-options"
 	native: #Native | *{}
 
