@@ -115,6 +115,18 @@ test "package imports and artifacts name their package surfaces" {
             }
             try testing.expect(found);
         }
+        for (m.option_values) |ov| {
+            try testing.expect(ov.name.len > 0);
+            // kind is one of the four supported tags; opt_commit is null or 40.
+            const ok = std.mem.eql(u8, ov.kind, "bool") or
+                std.mem.eql(u8, ov.kind, "string") or
+                std.mem.eql(u8, ov.kind, "u32") or
+                std.mem.eql(u8, ov.kind, "opt_commit");
+            try testing.expect(ok);
+            if (std.mem.eql(u8, ov.kind, "opt_commit")) {
+                if (ov.commit_value) |c| try testing.expect(c.len == 40);
+            }
+        }
     }
 }
 
