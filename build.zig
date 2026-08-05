@@ -260,12 +260,59 @@ fn dependencyWithOptions(
     @panic("unsupported package dependency backend");
 }
 
+fn dependencyWithFields(
+    b: *std.Build,
+    package: []const u8,
+    pass_target: bool,
+    pass_optimize: bool,
+    fields: []const []const u8,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Dependency {
+    if (pass_target and pass_optimize) {
+        return b.dependency(package, .{
+            .target = target,
+            .optimize = optimize,
+            .fields = fields,
+        });
+    }
+    if (pass_target) {
+        return b.dependency(package, .{
+            .target = target,
+            .fields = fields,
+        });
+    }
+    if (pass_optimize) {
+        return b.dependency(package, .{
+            .optimize = optimize,
+            .fields = fields,
+        });
+    }
+    return b.dependency(package, .{
+        .fields = fields,
+    });
+}
+
 fn dependencyForImport(
     b: *std.Build,
     pkg_import: spec.PackageImport,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 ) *std.Build.Dependency {
+    // A `fields` string-list option (e.g. uucode's Unicode property tables) is
+    // passed alongside target/optimize. It is mutually exclusive with `backend`
+    // in practice: no corpus dependency takes both.
+    if (pkg_import.fields.len > 0) {
+        return dependencyWithFields(
+            b,
+            pkg_import.package,
+            pkg_import.pass_target,
+            pkg_import.pass_optimize,
+            pkg_import.fields,
+            target,
+            optimize,
+        );
+    }
     return dependencyWithOptions(
         b,
         pkg_import.package,

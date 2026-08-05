@@ -93,6 +93,9 @@ test "package imports and artifacts name their package surfaces" {
             _ = pkg.pass_target;
             _ = pkg.pass_optimize;
             _ = pkg.backend;
+            // A `fields` string-list option (uucode-style) names non-empty
+            // tables when present; ordinary imports leave it empty.
+            for (pkg.fields) |field| try testing.expect(field.len > 0);
         }
         for (m.pkg_artifacts) |pkg| {
             try testing.expect(pkg.package.len > 0);
