@@ -60,6 +60,7 @@ pub const PackageImport = struct {
     pass_target: bool,
     pass_optimize: bool,
     backend: ?[]const u8,
+    fields: []const []const u8,
 };
 
 pub const PackageArtifact = struct {
@@ -250,6 +251,7 @@ def zig_pkg_imports(items):
             + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
             + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
             + ', .backend = ' + zig_optional_string(item.get('backend'))
+            + ', .fields = ' + zig_string_list(item.get('fields', []))
             + ' }'
         )
     return '&.{ ' + ', '.join(rendered) + ' }'

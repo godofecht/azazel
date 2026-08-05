@@ -41,6 +41,12 @@ package build
 	pass_target: bool | *true
 	pass_optimize: bool | *true
 	backend?: string
+
+	// A `fields` string-list option passed to the dependency, for packages
+	// that select which data tables to compile in (e.g. uucode's Unicode
+	// property fields). Emitted as `.fields = @as([]const []const u8, ...)`
+	// only when non-empty, so ordinary imports are unaffected.
+	fields: [...string] | *[]
 }
 
 #PackageArtifact: {
