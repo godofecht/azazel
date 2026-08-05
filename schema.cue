@@ -80,6 +80,27 @@ package build
 	lazy: bool | *false
 }
 
+// One argument to a generated module's host tool. `literal` is passed verbatim;
+// `input_file` is a repo path passed as a build-graph file dependency (so the
+// run reruns when it changes); `output_file` names a file the tool writes,
+// whose path the build graph captures.
+#GenArg: {
+	kind:  "literal" | "input_file" | "output_file"
+	value: string
+}
+
+// A module produced by compiling a host tool from the repo, running it, and
+// importing the file it writes. This reproduces a repo's codegen step (e.g.
+// zls compiles src/tools/config_gen.zig, runs it, and imports the emitted
+// version_data.zig as a module) without invoking the repo's own build.zig.
+#GeneratedImport: {
+	alias:     string   // @import name the consuming module uses
+	tool_root: string   // host tool source (.zig), built for the host
+	tool_name: string   // produced host executable's name
+	args: [...#GenArg]
+	output:    string   // the output_file arg whose written file is the module root
+}
+
 #Option: {
 	name: string
 	type: #OptionType
@@ -121,6 +142,7 @@ package build
 	pkg_artifacts: [...#PackageArtifact] | *[]
 	build_options: [...string] | *[]
 	option_values: [...#OptionValue] | *[]
+	gen_imports: [...#GeneratedImport] | *[]
 	build_options_import: string | *"build-options"
 	native: #Native | *{}
 

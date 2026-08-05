@@ -168,6 +168,40 @@ fn addBuildOptions(
     return options;
 }
 
+fn generatedModule(b: *std.Build, gen: spec.GeneratedImport) *std.Build.Module {
+    // Compile the repo's host tool, run it, and turn the file it writes into a
+    // module. The tool builds for the host (it runs at build time), and the run
+    // captures each output file's path from the build graph so the emitted file
+    // is a real dependency, not a fixed path on disk.
+    const tool = b.addExecutable(.{
+        .name = gen.tool_name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(gen.tool_root),
+            .target = b.graph.host,
+            .single_threaded = true,
+        }),
+    });
+
+    const run = b.addRunArtifact(tool);
+    var output_path: ?std.Build.LazyPath = null;
+    for (gen.args) |arg| {
+        if (std.mem.eql(u8, arg.kind, "literal")) {
+            run.addArg(arg.value);
+        } else if (std.mem.eql(u8, arg.kind, "input_file")) {
+            run.addFileArg(b.path(arg.value));
+        } else if (std.mem.eql(u8, arg.kind, "output_file")) {
+            const path = run.addOutputFileArg(arg.value);
+            if (std.mem.eql(u8, arg.value, gen.output)) output_path = path;
+        } else {
+            @panic("unsupported generated-import arg kind");
+        }
+    }
+
+    return b.createModule(.{
+        .root_source_file = output_path orelse @panic("generated import names no output_file matching `output`"),
+    });
+}
+
 fn applyNative(b: *std.Build, mod: *std.Build.Module, native: spec.Native) void {
     if (native.link_libc) mod.link_libc = true;
     if (native.link_libcpp) mod.link_libcpp = true;
@@ -406,6 +440,9 @@ pub fn build(b: *std.Build) void {
         for (m.pkg_artifacts) |pkg_artifact| {
             const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize);
             mod.linkLibrary(dep.artifact(pkg_artifact.artifact));
+        }
+        for (m.gen_imports) |gen| {
+            mod.addImport(gen.alias, generatedModule(b, gen));
         }
     }
 

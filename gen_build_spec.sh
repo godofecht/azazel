@@ -80,6 +80,19 @@ pub const OptionValue = struct {
     commit_value: ?[]const u8,
 };
 
+pub const GenArg = struct {
+    kind: []const u8,
+    value: []const u8,
+};
+
+pub const GeneratedImport = struct {
+    alias: []const u8,
+    tool_root: []const u8,
+    tool_name: []const u8,
+    args: []const GenArg,
+    output: []const u8,
+};
+
 pub const Native = struct {
     c_sources: []const []const u8,
     include_dirs: []const []const u8,
@@ -108,6 +121,7 @@ pub const Module = struct {
     pkg_artifacts: []const PackageArtifact,
     build_options: []const []const u8,
     option_values: []const OptionValue,
+    gen_imports: []const GeneratedImport,
     build_options_import: []const u8,
     native: Native,
     optimize: std.builtin.OptimizeMode,
@@ -303,6 +317,27 @@ def zig_option_values(items):
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
 
+def zig_gen_imports(items):
+    if not items:
+        return '&.{}'
+    rendered = []
+    for item in items:
+        args = item.get('args', [])
+        if args:
+            arg_parts = ['.{ .kind = ' + zig_string(a['kind']) + ', .value = ' + zig_string(a['value']) + ' }' for a in args]
+            args_str = '&.{ ' + ', '.join(arg_parts) + ' }'
+        else:
+            args_str = '&.{}'
+        rendered.append(
+            '.{ .alias = ' + zig_string(item['alias'])
+            + ', .tool_root = ' + zig_string(item['tool_root'])
+            + ', .tool_name = ' + zig_string(item['tool_name'])
+            + ', .args = ' + args_str
+            + ', .output = ' + zig_string(item['output'])
+            + ' }'
+        )
+    return '&.{ ' + ', '.join(rendered) + ' }'
+
 def zig_native(item):
     item = item or {}
     return '''.{{
@@ -347,6 +382,7 @@ for name, m in mods.items():
     pkg_artifacts_str = zig_pkg_artifacts(m.get('pkg_artifacts', []))
     build_options_str = zig_string_list(m.get('build_options', []))
     option_values_str = zig_option_values(m.get('option_values', []))
+    gen_imports_str = zig_gen_imports(m.get('gen_imports', []))
     native_str = zig_native(m.get('native', {}))
     print(f'''    .{{
         .name = {zig_string(name)},
@@ -363,6 +399,7 @@ for name, m in mods.items():
         .pkg_artifacts = {pkg_artifacts_str},
         .build_options = {build_options_str},
         .option_values = {option_values_str},
+        .gen_imports = {gen_imports_str},
         .build_options_import = {zig_string(m.get('build_options_import', 'build-options'))},
         .native = {native_str},
         .optimize = {opt},
