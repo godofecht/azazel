@@ -130,6 +130,24 @@ test "package imports and artifacts name their package surfaces" {
                 if (ov.commit_value) |c| try testing.expect(c.len == 40);
             }
         }
+        for (m.gen_imports) |gen| {
+            try testing.expect(gen.alias.len > 0);
+            try testing.expect(gen.tool_root.len > 0);
+            try testing.expect(std.mem.endsWith(u8, gen.tool_root, ".zig"));
+            try testing.expect(gen.tool_name.len > 0);
+            try testing.expect(gen.output.len > 0);
+            // The named output must be one of the arg output_files.
+            var output_declared = false;
+            for (gen.args) |arg| {
+                const ak = std.mem.eql(u8, arg.kind, "literal") or
+                    std.mem.eql(u8, arg.kind, "input_file") or
+                    std.mem.eql(u8, arg.kind, "output_file");
+                try testing.expect(ak);
+                if (std.mem.eql(u8, arg.kind, "output_file") and
+                    std.mem.eql(u8, arg.value, gen.output)) output_declared = true;
+            }
+            try testing.expect(output_declared);
+        }
     }
 }
 
