@@ -12,6 +12,9 @@ fn laneMatchesCurrent(comptime lane: []const u8) bool {
     if (std.mem.eql(u8, lane, "0.16")) {
         return builtin.zig_version.major == 0 and builtin.zig_version.minor == 16;
     }
+    if (std.mem.eql(u8, lane, "0.17")) {
+        return builtin.zig_version.major == 0 and builtin.zig_version.minor == 17;
+    }
     return false;
 }
 
@@ -400,7 +403,7 @@ pub fn build(b: *std.Build) void {
             b.getInstallStep().dependOn(&install.step);
             for (m.post, 0..) |cmd, idx| {
                 const post = addPostCommand(b, m.name, idx, cmd);
-                post.dependencies.append(&install.step) catch unreachable;
+                post.dependOn(&install.step);
                 b.getInstallStep().dependOn(post);
             }
         }

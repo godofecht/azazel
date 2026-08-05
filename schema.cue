@@ -2,7 +2,7 @@ package build
 
 #Kind:    "exe" | "static" | "shared" | "module"
 #Profile: "debug" | "release"
-#ZigLane: "0.14" | "0.15" | "0.16"
+#ZigLane: "0.14" | "0.15" | "0.16" | "0.17"
 #OptionType: "bool" | "string" | "u32"
 
 // How a module is consumed by the things that depend on it.
