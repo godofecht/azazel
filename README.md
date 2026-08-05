@@ -5,6 +5,8 @@
 
 A deterministic build configuration layer powered by **CUE** for constraint validation and **Zig** for execution. The configuration frontend for [Zaza](https://github.com/godofecht/zaza).
 
+**Who this is for:** Zig developers who'd rather declare their build than hand-maintain `std.Build`. You still write your own Zig — Azazel replaces the imperative `build.zig` boilerplate (and the churn of tracking `std.Build` across Zig releases), not the language.
+
 ```
 project.cue  →  CUE validates  →  build_spec.zig  →  zig build  →  binary
   (human)        (schema.cue)      (generated)        (engine)
