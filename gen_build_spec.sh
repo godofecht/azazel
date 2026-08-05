@@ -71,6 +71,15 @@ pub const PackageArtifact = struct {
     backend: ?[]const u8,
 };
 
+pub const OptionValue = struct {
+    name: []const u8,
+    kind: []const u8,
+    bool_value: bool,
+    string_value: []const u8,
+    u32_value: u32,
+    commit_value: ?[]const u8,
+};
+
 pub const Native = struct {
     c_sources: []const []const u8,
     include_dirs: []const []const u8,
@@ -98,6 +107,7 @@ pub const Module = struct {
     pkg_imports: []const PackageImport,
     pkg_artifacts: []const PackageArtifact,
     build_options: []const []const u8,
+    option_values: []const OptionValue,
     build_options_import: []const u8,
     native: Native,
     optimize: std.builtin.OptimizeMode,
@@ -274,6 +284,25 @@ def zig_pkg_artifacts(items):
 def zig_bool(v):
     return 'true' if v else 'false'
 
+def zig_option_values(items):
+    if not items:
+        return '&.{}'
+    rendered = []
+    for item in items:
+        kind = item['kind']
+        commit = item.get('commit')
+        commit_field = 'null' if (kind != 'opt_commit' or not commit) else zig_string(commit)
+        rendered.append(
+            '.{ .name = ' + zig_string(item['name'])
+            + ', .kind = ' + zig_string(kind)
+            + ', .bool_value = ' + zig_bool(item.get('bool_value', False))
+            + ', .string_value = ' + zig_string(item.get('string_value', ''))
+            + ', .u32_value = ' + str(int(item.get('u32_value', 0)))
+            + ', .commit_value = ' + commit_field
+            + ' }'
+        )
+    return '&.{ ' + ', '.join(rendered) + ' }'
+
 def zig_native(item):
     item = item or {}
     return '''.{{
@@ -317,6 +346,7 @@ for name, m in mods.items():
     pkg_imports_str = zig_pkg_imports(m.get('pkg_imports', []))
     pkg_artifacts_str = zig_pkg_artifacts(m.get('pkg_artifacts', []))
     build_options_str = zig_string_list(m.get('build_options', []))
+    option_values_str = zig_option_values(m.get('option_values', []))
     native_str = zig_native(m.get('native', {}))
     print(f'''    .{{
         .name = {zig_string(name)},
@@ -332,6 +362,7 @@ for name, m in mods.items():
         .pkg_imports = {pkg_imports_str},
         .pkg_artifacts = {pkg_artifacts_str},
         .build_options = {build_options_str},
+        .option_values = {option_values_str},
         .build_options_import = {zig_string(m.get('build_options_import', 'build-options'))},
         .native = {native_str},
         .optimize = {opt},
