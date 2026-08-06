@@ -37,5 +37,9 @@ for f in sorted(files):
 DEPS=$( [ -f build.zig.zon ] && grep -E '\.url|\.hash' build.zig.zon | sed 's/^[[:space:]]*//' | sort || true )
 LANE=$(printf '%s' "$MODEL" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("toolchain",{}).get("zig",{}).get("preferred",""))')
 ZIGV=$(zig version 2>/dev/null || echo unknown)
+# Artifacts are platform-specific: a macOS build and a Linux build of the same
+# model produce different bytes, so the host OS+arch is part of the key. Without
+# this a cross-platform hit would restore the wrong binary.
+HOST=$(uname -sm 2>/dev/null || echo unknown)
 
-printf '%s\n%s\n%s\nlane=%s\nzig=%s\n' "$MODEL" "$SRC_HASHES" "$DEPS" "$LANE" "$ZIGV" | shasum -a 256 | cut -d' ' -f1
+printf '%s\n%s\n%s\nlane=%s\nzig=%s\nhost=%s\n' "$MODEL" "$SRC_HASHES" "$DEPS" "$LANE" "$ZIGV" "$HOST" | shasum -a 256 | cut -d' ' -f1
