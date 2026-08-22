@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Pinned to match the version used locally. The generator's output has to be
-  # reproducible, so the cue version is part of that contract.
+  # Pinned because the CUE export is part of Azazel's build-model contract.
   CUE_VERSION: v0.16.0
 
 jobs:
@@ -17,10 +16,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # build.zig uses the root_module API, which exists in both. 0.15
-        # removed the older addStaticLibrary/addSharedLibrary form; 0.14.1
-        # accepts the newer one. Testing both keeps that compatibility honest
-        # rather than assumed.
         zig: ["0.14.1", "0.15.2", "0.16.0"]
     name: build-and-test (zig ${{ matrix.zig }})
     steps:
@@ -39,24 +34,29 @@ jobs:
           rm cue.tar.gz
           cue version
 
+      - name: Validate CLI and exported build contract
+        run: |
+          python3 -m py_compile azazel
+          python3 azazel check
+
       # build_spec.zig is generated from project.cue and is gitignored, so a
       # fresh clone has to produce it before anything will build.
-      - name: Generate build spec
-        run: ./gen_build_spec.sh
+      - name: Generate build spec through the canonical CLI
+        run: python3 azazel gen
 
-      # build_spec.zig is gitignored, so `git diff` cannot check it. Compare a
-      # second run against the first instead: the generator must be
-      # deterministic, or build.zig is walking a spec nobody can reproduce.
+      # Force a real second generation. gen_build_spec.sh memoizes unchanged
+      # inputs, so deleting the stamp is required for this to test determinism.
       - name: Check the generator is deterministic
         run: |
           cp build_spec.zig build_spec.first
-          ./gen_build_spec.sh
+          rm -f .build_spec.stamp
+          python3 azazel gen
           diff -u build_spec.first build_spec.zig \
             || { echo "gen_build_spec.sh is not deterministic"; exit 1; }
           rm build_spec.first
 
-      - name: Build
-        run: zig build
+      - name: Build through the canonical CLI
+        run: python3 azazel build
 
       - name: Test
         run: zig build test --summary all
