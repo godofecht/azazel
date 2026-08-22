@@ -2,42 +2,70 @@
 
 ## Prerequisites
 
-- [Zig](https://ziglang.org/download/) 0.14.0+
-- [CUE](https://cuelang.org/docs/introduction/installation/) v0.16.0+
-- Python 3 (for codegen script)
+- Zig 0.14.1, 0.15.2, or 0.16.0 for the supported release lanes
+- CUE v0.16.0
+- Python 3 for validation/code generation
 
 ## Setup
 
 ```sh
 git clone https://github.com/godofecht/azazel.git
 cd azazel
+./setup.sh --check-only
 ```
+
+## Validate
+
+Run the same contract check used by CI:
+
+```sh
+python3 azazel check
+```
+
+This validates the CUE model, verifies that the full module schema survives the
+export layer, checks module roots and dependency references, and rejects cycles.
 
 ## Build
 
 ```sh
-./gen_build_spec.sh   # CUE → build_spec.zig
-zig build             # compile everything
+python3 azazel gen
+python3 azazel build
 ```
 
-## Run
+`azazel gen` delegates to the canonical `gen_build_spec.sh`; the CLI does not
+maintain a second generator implementation.
+
+The equivalent low-level path is:
+
+```sh
+./gen_build_spec.sh
+zig build
+```
+
+Normal Zig build arguments can be forwarded through the CLI:
+
+```sh
+python3 azazel build -Dfoo=true
+```
+
+## Test
+
+```sh
+zig build test --summary all
+```
+
+## Run the repository fixture
 
 ```sh
 ./zig-out/bin/app
 ```
 
-## Validate Without Building
-
-Check your `project.cue` against the schema without generating anything:
+## Inspect resolved configuration
 
 ```sh
-cue vet
+python3 azazel info
 ```
 
-## Inspect Resolved Config
-
-See the fully normalized build data CUE produces:
-
-```sh
-cue export -e build
-```
+For production guarantees and experimental boundaries, read
+[`PRODUCTION.md`](PRODUCTION.md). The shared artifact cache is experimental and
+disabled by default; do not use it for release artifacts.
