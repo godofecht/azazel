@@ -1,14 +1,10 @@
 #!/bin/sh
-# azazel cache-key: a portable content key for this build, computed from the
-# model and its inputs WITHOUT invoking the compiler. Identical inputs produce
-# an identical key on any machine, so it can address a shared artifact cache — a
-# remote cache without the remote-execution machinery. The key covers:
-#   - the normalized build model (cue export)
-#   - every .zig source under each module root's tree (content-hashed)
-#   - the pinned dependency identities from build.zig.zon (url + hash)
-#   - the toolchain: the model's preferred lane and the resolved zig version
-# Over-invalidation is sound: a superfluous miss just rebuilds; a stale hit
-# cannot happen because any changed input changes the key.
+# Experimental Azazel cache key.
+#
+# This key is intentionally not advertised as a complete build-input closure.
+# It covers the normalized model, reachable Zig source, the Azazel execution
+# files, dependency identities, Zig version, and host identity. See CACHE.md for
+# known gaps and promotion criteria.
 set -eu
 cd "$(dirname "$0")"
 
@@ -16,15 +12,7 @@ MODEL=$(cue export -e build)
 
 SRC_HASHES=$(printf '%s' "$MODEL" | python3 -c '
 import json, sys, os, re
-# Hash only the sources this build actually compiles: walk the @import graph
-# from each module root and include only files reachable through it. This is
-# "compile only what you use" applied to the cache key — a .zig file that sits
-# under a module root'"'"'s directory but is never imported does not affect the
-# build, so it must not affect the key. Following the real import edges (instead
-# of every file in the tree) stops such files from spuriously invalidating the
-# cache. Only imports that resolve to a sibling .zig file are followed; package
-# imports (@import("std"), or a named dependency) do not end in .zig and are
-# pinned separately via build.zig.zon, so they are skipped here.
+
 IMPORT = re.compile(r"@import\(\s*\"([^\"]+)\"\s*\)")
 roots = [m["root"] for m in json.load(sys.stdin)["modules"].values()]
 seen, stack = set(), [os.path.normpath(r) for r in roots if os.path.isfile(r)]
@@ -48,12 +36,19 @@ for f in sorted(seen):
     print(f)
 ' | while IFS= read -r f; do [ -f "$f" ] && shasum -a 256 "$f"; done)
 
+# Changes to the schema, exporter, code generator, or Zig executor can change
+# the artifact even when the resolved project model is unchanged.
+ENGINE_HASHES=$(
+    for f in schema.cue project.cue export.cue gen_build_spec.sh build.zig build.zig.zon; do
+        [ -f "$f" ] && shasum -a 256 "$f"
+    done
+)
+
 DEPS=$( [ -f build.zig.zon ] && grep -E '\.url|\.hash' build.zig.zon | sed 's/^[[:space:]]*//' | sort || true )
 LANE=$(printf '%s' "$MODEL" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("toolchain",{}).get("zig",{}).get("preferred",""))')
 ZIGV=$(zig version 2>/dev/null || echo unknown)
-# Artifacts are platform-specific: a macOS build and a Linux build of the same
-# model produce different bytes, so the host OS+arch is part of the key. Without
-# this a cross-platform hit would restore the wrong binary.
 HOST=$(uname -sm 2>/dev/null || echo unknown)
 
-printf '%s\n%s\n%s\nlane=%s\nzig=%s\nhost=%s\n' "$MODEL" "$SRC_HASHES" "$DEPS" "$LANE" "$ZIGV" "$HOST" | shasum -a 256 | cut -d' ' -f1
+printf '%s\n%s\n%s\n%s\nlane=%s\nzig=%s\nhost=%s\n' \
+    "$MODEL" "$SRC_HASHES" "$ENGINE_HASHES" "$DEPS" "$LANE" "$ZIGV" "$HOST" \
+    | shasum -a 256 | cut -d' ' -f1

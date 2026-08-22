@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Pinned to match the version used locally. The generator's output has to be
-  # reproducible, so the cue version is part of that contract.
+  # Pinned because the CUE export is part of Azazel's build-model contract.
   CUE_VERSION: v0.16.0
 
 jobs:
@@ -17,10 +16,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # build.zig uses the root_module API, which exists in both. 0.15
-        # removed the older addStaticLibrary/addSharedLibrary form; 0.14.1
-        # accepts the newer one. Testing both keeps that compatibility honest
-        # rather than assumed.
         zig: ["0.14.1", "0.15.2", "0.16.0"]
     name: build-and-test (zig ${{ matrix.zig }})
     steps:
@@ -39,24 +34,66 @@ jobs:
           rm cue.tar.gz
           cue version
 
+      - name: Static checks
+        run: |
+          python3 -m py_compile azazel scripts/build_site.py tools/huge_corpus.py
+          sh -n gen_build_spec.sh setup.sh cache_key.sh cache_build.sh
+          python3 scripts/build_site.py
+
+      - name: Validate CLI and exported build contract
+        run: python3 azazel check
+
       # build_spec.zig is generated from project.cue and is gitignored, so a
       # fresh clone has to produce it before anything will build.
-      - name: Generate build spec
-        run: ./gen_build_spec.sh
+      - name: Generate build spec through the canonical CLI
+        run: python3 azazel gen
 
-      # build_spec.zig is gitignored, so `git diff` cannot check it. Compare a
-      # second run against the first instead: the generator must be
-      # deterministic, or build.zig is walking a spec nobody can reproduce.
+      # Force a real second generation. gen_build_spec.sh memoizes unchanged
+      # inputs, so deleting the stamp is required for this to test determinism.
       - name: Check the generator is deterministic
         run: |
           cp build_spec.zig build_spec.first
-          ./gen_build_spec.sh
+          rm -f .build_spec.stamp
+          python3 azazel gen
           diff -u build_spec.first build_spec.zig \
             || { echo "gen_build_spec.sh is not deterministic"; exit 1; }
           rm build_spec.first
 
-      - name: Build
-        run: zig build
+      - name: Build through the canonical CLI
+        run: python3 azazel build
 
       - name: Test
         run: zig build test --summary all
+
+  macos-smoke:
+    runs-on: macos-latest
+    name: macOS smoke (zig 0.16.0)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: "0.16.0"
+
+      - name: Install cue
+        run: |
+          case "$(uname -m)" in
+            arm64) CUE_ARCH=arm64 ;;
+            x86_64) CUE_ARCH=amd64 ;;
+            *) echo "unsupported macOS architecture: $(uname -m)"; exit 1 ;;
+          esac
+          curl -fsSL -o cue.tar.gz \
+            "https://github.com/cue-lang/cue/releases/download/${CUE_VERSION}/cue_${CUE_VERSION}_darwin_${CUE_ARCH}.tar.gz"
+          tar -xzf cue.tar.gz cue
+          sudo mv cue /usr/local/bin/
+          rm cue.tar.gz
+          cue version
+
+      - name: Validate, generate, build, and test
+        run: |
+          python3 -m py_compile azazel
+          sh -n gen_build_spec.sh setup.sh cache_key.sh cache_build.sh
+          python3 azazel check
+          python3 azazel gen
+          python3 azazel build
+          zig build test --summary all
