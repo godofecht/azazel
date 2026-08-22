@@ -1,527 +1,214 @@
 #!/usr/bin/env python3
-"""
-azazel — CUE + Zig deterministic build system CLI.
+"""Azazel CLI: validate, generate, build, inspect, and clean an Azazel project.
 
-Commands:
-    check   Validate config, deps, source files — no build (< 1s)
-    gen     Generate build_spec.zig from CUE
-    build   gen + zig build (full pipeline)
-    clean   Remove build artifacts
-    info    Show resolved config as JSON
-    init    Scaffold a new Azazel project
+The CUE -> Zig generator has exactly one implementation: gen_build_spec.sh.
+This CLI orchestrates that canonical pipeline; it does not reimplement it.
 """
+
+from __future__ import annotations
 
 import json
-import os
+import shutil
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
-# ── Colors ──────────────────────────────────────────────────────────
+REQUIRED_MODULE_FIELDS = {
+    "kind",
+    "artifact_name",
+    "root",
+    "deps",
+    "link",
+    "pre",
+    "post",
+    "install_dirs",
+    "pkg_library_paths",
+    "pkg_imports",
+    "pkg_artifacts",
+    "build_options",
+    "option_values",
+    "gen_imports",
+    "build_options_import",
+    "native",
+    "optimize",
+}
 
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-CYAN = "\033[36m"
-DIM = "\033[2m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
 
-def ok(msg):    print(f"  {GREEN}✓{RESET} {msg}")
-def warn(msg):  print(f"  {YELLOW}⚠{RESET} {msg}")
-def err(msg):   print(f"  {RED}✗{RESET} {msg}")
-def info(msg):  print(f"  {BLUE}·{RESET} {msg}")
-def heading(msg): print(f"\n{BOLD}{msg}{RESET}")
-
-# ── Helpers ─────────────────────────────────────────────────────────
-
-def find_project_root():
-    """Walk up from cwd to find directory containing schema.cue."""
-    d = Path.cwd()
-    while d != d.parent:
-        if (d / "schema.cue").exists():
-            return d
-        d = d.parent
-    # Fallback to cwd
-    if (Path.cwd() / "schema.cue").exists():
-        return Path.cwd()
+def project_root() -> Path | None:
+    current = Path.cwd().resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / "schema.cue").is_file() and (candidate / "gen_build_spec.sh").is_file():
+            return candidate
     return None
 
-def run(cmd, cwd=None, capture=True):
-    """Run a command, return (stdout, stderr, returncode)."""
-    result = subprocess.run(
-        cmd, shell=True, cwd=cwd,
-        capture_output=capture, text=True
+
+def require_tool(name: str) -> None:
+    if shutil.which(name) is None:
+        raise RuntimeError(f"required tool not found on PATH: {name}")
+
+
+def run(args: list[str], *, cwd: Path, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        capture_output=capture,
+        check=False,
     )
-    stdout = result.stdout.strip() if result.stdout else ""
-    stderr = result.stderr.strip() if result.stderr else ""
-    return stdout, stderr, result.returncode
 
-def require_tool(name):
-    """Check that a CLI tool is on PATH."""
-    _, _, code = run(f"which {name}")
-    if code != 0:
-        err(f"'{name}' not found on PATH")
-        return False
-    return True
 
-def cue_export(root):
-    """Run cue export -e build and return parsed JSON or None."""
-    out, stderr, code = run("cue export -e build", cwd=root)
-    if code != 0:
-        return None, stderr
+def cue_export(root: Path) -> dict:
+    require_tool("cue")
+    result = run(["cue", "export", "-e", "build"], cwd=root)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "cue export failed")
     try:
-        return json.loads(out), None
-    except json.JSONDecodeError as e:
-        return None, str(e)
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"cue export returned invalid JSON: {exc}") from exc
 
-# ── Commands ────────────────────────────────────────────────────────
 
-def cmd_check(root):
-    """Validate everything without generating or building."""
-    heading("azazel check")
-    errors = 0
+def validate_graph(data: dict, root: Path) -> list[str]:
+    errors: list[str] = []
+    modules = data.get("modules")
+    if not isinstance(modules, dict) or not modules:
+        return ["build.modules must contain at least one module"]
 
-    # 1. Schema validation
-    info("Validating CUE schema...")
-    _, stderr, code = run("cue vet", cwd=root)
-    if code != 0:
-        err(f"Schema validation failed:\n{stderr}")
-        errors += 1
-    else:
-        ok("Schema valid")
+    names = set(modules)
+    graph: dict[str, list[str]] = {}
 
-    # 2. Export validation
-    info("Resolving build config...")
-    data, export_err = cue_export(root)
-    if data is None:
-        err(f"Export failed:\n{export_err}")
-        errors += 1
-        # Can't continue without data
-        print(f"\n{RED}{BOLD}{errors} error(s){RESET}")
-        return errors
-    ok(f"Resolved {len(data.get('modules', {}))} module(s)")
+    for name, module in modules.items():
+        if not isinstance(module, dict):
+            errors.append(f"module {name!r} did not export as an object")
+            continue
 
-    modules = data.get("modules", {})
+        missing = sorted(REQUIRED_MODULE_FIELDS - set(module))
+        if missing:
+            errors.append(f"module {name!r} is missing exported fields: {', '.join(missing)}")
 
-    # 3. Check source files exist
-    info("Checking source files...")
-    for name, m in modules.items():
-        src = root / m["root"]
-        if not src.exists():
-            err(f"Module '{name}': source file not found: {m['root']}")
-            errors += 1
-        else:
-            ok(f"Module '{name}': {m['root']}")
+        source = module.get("root")
+        if isinstance(source, str) and not (root / source).is_file():
+            errors.append(f"module {name!r} root does not exist: {source}")
 
-    # 4. Check dependency references
-    info("Checking dependency graph...")
-    module_names = set(modules.keys())
-    dep_graph = {}
-    for name, m in modules.items():
-        deps = m.get("deps", [])
-        dep_graph[name] = deps
-        for dep in deps:
-            if dep not in module_names:
-                err(f"Module '{name}': depends on '{dep}' which is not defined")
-                errors += 1
+        deps = module.get("deps", [])
+        if not isinstance(deps, list):
+            errors.append(f"module {name!r} deps did not export as a list")
+            deps = []
+        graph[name] = [dep for dep in deps if isinstance(dep, str)]
+        for dep in graph[name]:
+            if dep not in names:
+                errors.append(f"module {name!r} depends on unknown module {dep!r}")
             elif dep == name:
-                err(f"Module '{name}': self-dependency")
-                errors += 1
+                errors.append(f"module {name!r} depends on itself")
 
-    if errors == 0:
-        ok("All dependencies resolve")
+    state: dict[str, int] = {}
 
-    # 5. Check for circular dependencies
-    def has_cycle(node, visited, stack):
-        visited.add(node)
-        stack.add(node)
-        for neighbor in dep_graph.get(node, []):
-            if neighbor in stack:
-                return [node, neighbor]
-            if neighbor not in visited:
-                result = has_cycle(neighbor, visited, stack)
-                if result:
-                    return result
-        stack.discard(node)
-        return None
+    def visit(node: str, trail: list[str]) -> None:
+        mark = state.get(node, 0)
+        if mark == 2:
+            return
+        if mark == 1:
+            cycle = trail[trail.index(node):] + [node] if node in trail else trail + [node]
+            errors.append("dependency cycle: " + " -> ".join(cycle))
+            return
+        state[node] = 1
+        for dep in graph.get(node, []):
+            if dep in graph:
+                visit(dep, trail + [node])
+        state[node] = 2
 
-    visited = set()
-    for name in modules:
-        if name not in visited:
-            cycle = has_cycle(name, visited, set())
-            if cycle:
-                err(f"Circular dependency: {cycle[0]} ↔ {cycle[1]}")
-                errors += 1
+    for name in graph:
+        if state.get(name, 0) == 0:
+            visit(name, [])
 
-    if errors == 0:
-        ok("No circular dependencies")
-
-    # 6. Check for unused modules (defined but not depended on and not exe)
-    depended_on = set()
-    for name, m in modules.items():
-        for dep in m.get("deps", []):
-            depended_on.add(dep)
-
-    for name, m in modules.items():
-        if m["kind"] != "exe" and name not in depended_on:
-            warn(f"Module '{name}' ({m['kind']}) is not depended on by any other module")
-
-    # 7. Summary
-    exe_count = sum(1 for m in modules.values() if m["kind"] == "exe")
-    lib_count = len(modules) - exe_count
-    profiles_used = set(m.get("optimize", "Debug") for m in modules.values())
-
-    heading("Summary")
-    info(f"{len(modules)} modules: {exe_count} executable(s), {lib_count} library(ies)")
-    info(f"Profiles: {', '.join(sorted(profiles_used))}")
-
-    if errors == 0:
-        print(f"\n{GREEN}{BOLD}All checks passed.{RESET}")
-    else:
-        print(f"\n{RED}{BOLD}{errors} error(s) found.{RESET}")
     return errors
 
 
-def cmd_gen(root):
-    """Generate build_spec.zig from CUE config."""
-    heading("azazel gen")
-
-    info("Exporting CUE config...")
-    data, export_err = cue_export(root)
-    if data is None:
-        err(f"Export failed:\n{export_err}")
+def cmd_check(root: Path) -> int:
+    data = cue_export(root)
+    errors = validate_graph(data, root)
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
         return 1
-
-    modules = data.get("modules", {})
-
-    # Generate Zig source
-    lines = []
-    lines.append('const std = @import("std");')
-    lines.append('')
-    lines.append('pub const Kind = enum { exe, static, shared };')
-    lines.append('')
-    lines.append('pub const Module = struct {')
-    lines.append('    name: []const u8,')
-    lines.append('    kind: Kind,')
-    lines.append('    root: []const u8,')
-    lines.append('    deps: []const []const u8,')
-    lines.append('    optimize: std.builtin.OptimizeMode,')
-    lines.append('};')
-    lines.append('')
-    lines.append('pub const modules = [_]Module{')
-
-    opt_map = {
-        "Debug": ".Debug",
-        "ReleaseFast": ".ReleaseFast",
-        "ReleaseSafe": ".ReleaseSafe",
-        "ReleaseSmall": ".ReleaseSmall",
-    }
-
-    for name, m in modules.items():
-        deps = m.get("deps", [])
-        if deps:
-            deps_str = "&.{ " + ", ".join(f'"{d}"' for d in deps) + " }"
-        else:
-            deps_str = "&.{}"
-
-        lines.append("    .{")
-        lines.append(f'        .name = "{name}",')
-        lines.append(f"        .kind = .{m['kind']},")
-        lines.append(f'        .root = "{m["root"]}",')
-        lines.append(f"        .deps = {deps_str},")
-        lines.append(f"        .optimize = {opt_map[m['optimize']]},")
-        lines.append("    },")
-
-    lines.append("};")
-    lines.append("")
-
-    spec_path = root / "build_spec.zig"
-    spec_path.write_text("\n".join(lines))
-    ok(f"Generated build_spec.zig ({len(modules)} modules)")
+    print(f"azazel: configuration valid ({len(data['modules'])} modules)")
     return 0
 
 
-def cmd_build(root, extra_args=""):
-    """Full pipeline: check → gen → zig build."""
-    heading("azazel build")
-
-    # Check first
-    info("Running checks...")
-    errs = cmd_check(root)
-    if errs > 0:
-        return errs
-
-    # Generate
-    code = cmd_gen(root)
-    if code != 0:
-        return code
-
-    # Build
-    heading("zig build")
-    cmd = "zig build"
-    if extra_args:
-        cmd += f" {extra_args}"
-    info(f"Running: {cmd}")
-    _, stderr, code = run(cmd, cwd=root, capture=False)
-    if code != 0:
-        err("Build failed")
-        return code
-
-    ok("Build succeeded")
-
-    # List outputs
-    out_dir = root / "zig-out" / "bin"
-    if out_dir.exists():
-        heading("Outputs")
-        for f in sorted(out_dir.iterdir()):
-            if f.is_file():
-                size = f.stat().st_size
-                if size > 1024 * 1024:
-                    size_str = f"{size / (1024*1024):.1f} MB"
-                elif size > 1024:
-                    size_str = f"{size / 1024:.1f} KB"
-                else:
-                    size_str = f"{size} B"
-                info(f"{f.name} {DIM}({size_str}){RESET}")
-
-    return 0
+def cmd_gen(root: Path) -> int:
+    result = run(["sh", "gen_build_spec.sh"], cwd=root, capture=False)
+    return result.returncode
 
 
-def cmd_clean(root):
-    """Remove generated artifacts."""
-    heading("azazel clean")
-    removed = []
-
-    spec = root / "build_spec.zig"
-    if spec.exists():
-        spec.unlink()
-        removed.append("build_spec.zig")
-
-    for d in ["zig-out", ".zig-cache", "zig-cache"]:
-        p = root / d
-        if p.exists():
-            import shutil
-            shutil.rmtree(p)
-            removed.append(f"{d}/")
-
-    if removed:
-        for r in removed:
-            ok(f"Removed {r}")
-    else:
-        info("Nothing to clean")
-    return 0
-
-
-def cmd_info(root):
-    """Show resolved config as JSON."""
-    data, export_err = cue_export(root)
-    if data is None:
-        err(f"Export failed:\n{export_err}")
+def cmd_build(root: Path, extra: list[str]) -> int:
+    if cmd_check(root) != 0:
         return 1
-    print(json.dumps(data, indent=2))
-    return 0
-
-
-def cmd_init(path=None):
-    """Scaffold a new Azazel project."""
-    target = Path(path) if path else Path.cwd()
-    heading(f"azazel init {target.name}")
-
-    if (target / "schema.cue").exists():
-        err("Already an Azazel project (schema.cue exists)")
+    if cmd_gen(root) != 0:
         return 1
+    require_tool("zig")
+    result = run(["zig", "build", *extra], cwd=root, capture=False)
+    return result.returncode
 
-    target.mkdir(parents=True, exist_ok=True)
-    src = target / "src"
-    src.mkdir(exist_ok=True)
 
-    # schema.cue
-    (target / "schema.cue").write_text(textwrap.dedent('''\
-        package build
-
-        #Kind:    "exe" | "static" | "shared"
-        #Profile: "debug" | "release"
-
-        #Module: {
-        \tkind:     #Kind
-        \troot:     string
-        \tdeps:     [...string] | *[]
-        \tprofile:  #Profile | *"debug"
-        }
-
-        #Profiles: {
-        \tdebug: {
-        \t\toptimize: "Debug"
-        \t}
-        \trelease: {
-        \t\toptimize: "ReleaseFast"
-        \t}
-        }
-
-        profiles: #Profiles
-    '''))
-
-    # project.cue
-    name = target.name.replace("-", "_").replace(" ", "_")
-    (target / "project.cue").write_text(textwrap.dedent(f'''\
-        package build
-
-        {name}: #Module & {{
-        \tkind: "exe"
-        \troot: "src/main.zig"
-        }}
-    '''))
-
-    # export.cue
-    (target / "export.cue").write_text(textwrap.dedent(f'''\
-        package build
-
-        _modules: {{
-        \t"{name}": {name}
-        }}
-
-        build: modules: {{
-        \tfor k, v in _modules {{
-        \t\t(k): {{
-        \t\t\tkind:     v.kind
-        \t\t\troot:     v.root
-        \t\t\tdeps:     v.deps
-        \t\t\toptimize: profiles[v.profile].optimize
-        \t\t}}
-        \t}}
-        }}
-    '''))
-
-    # build.zig
-    (target / "build.zig").write_text(textwrap.dedent('''\
-        const std = @import("std");
-        const spec = @import("build_spec.zig");
-
-        pub fn build(b: *std.Build) void {
-            const target = b.standardTargetOptions(.{});
-
-            var built = std.StringHashMap(*std.Build.Step.Compile).init(b.allocator);
-            defer built.deinit();
-
-            for (spec.modules) |m| {
-                const step = switch (m.kind) {
-                    .exe => b.addExecutable(.{
-                        .name = m.name,
-                        .root_source_file = b.path(m.root),
-                        .optimize = m.optimize,
-                        .target = target,
-                    }),
-                    .static => b.addStaticLibrary(.{
-                        .name = m.name,
-                        .root_source_file = b.path(m.root),
-                        .optimize = m.optimize,
-                        .target = target,
-                    }),
-                    .shared => b.addSharedLibrary(.{
-                        .name = m.name,
-                        .root_source_file = b.path(m.root),
-                        .optimize = m.optimize,
-                        .target = target,
-                    }),
-                };
-                built.put(m.name, step) catch unreachable;
-            }
-
-            for (spec.modules) |m| {
-                const step = built.get(m.name).?;
-                for (m.deps) |dep| {
-                    step.linkLibrary(built.get(dep).?);
-                }
-                if (m.kind == .exe) b.installArtifact(step);
-            }
-        }
-    '''))
-
-    # src/main.zig
-    (src / "main.zig").write_text(textwrap.dedent('''\
-        const std = @import("std");
-
-        pub fn main() void {
-            std.debug.print("hello from {s}\\n", .{"''' + name + '''"});
-        }
-    '''))
-
-    # .gitignore
-    (target / ".gitignore").write_text(textwrap.dedent('''\
-        zig-out/
-        zig-cache/
-        .zig-cache/
-        build_spec.zig
-    '''))
-
-    ok("schema.cue")
-    ok("project.cue")
-    ok("export.cue")
-    ok("build.zig")
-    ok("src/main.zig")
-    ok(".gitignore")
-    print(f"\n{GREEN}Project ready.{RESET} Run: {CYAN}azazel build{RESET}")
+def cmd_clean(root: Path) -> int:
+    for name in ("build_spec.zig", ".build_spec.stamp"):
+        path = root / name
+        if path.exists():
+            path.unlink()
+    for pattern in ("zig-out", ".zig-cache", "zig-cache", ".zig-cache-*", ".zig-cache-global-*"):
+        for path in root.glob(pattern):
+            if path.is_dir():
+                shutil.rmtree(path)
     return 0
 
 
-# ── Main ────────────────────────────────────────────────────────────
+def cmd_info(root: Path) -> int:
+    print(json.dumps(cue_export(root), indent=2, sort_keys=True))
+    return 0
 
-USAGE = f"""{BOLD}azazel{RESET} — CUE + Zig deterministic build system
 
-{BOLD}Usage:{RESET}
-  azazel check          Validate config, deps, source files
-  azazel gen            Generate build_spec.zig
-  azazel build [args]   check + gen + zig build
-  azazel clean          Remove build artifacts
-  azazel info           Show resolved config as JSON
-  azazel init [path]    Scaffold a new project
+def usage() -> None:
+    print(
+        "azazel — deterministic CUE + Zig build configuration\n\n"
+        "usage:\n"
+        "  azazel check\n"
+        "  azazel gen\n"
+        "  azazel build [zig build args...]\n"
+        "  azazel clean\n"
+        "  azazel info"
+    )
 
-{DIM}https://github.com/godofecht/azazel{RESET}"""
 
-def main():
+def main() -> int:
     args = sys.argv[1:]
-    if not args or args[0] in ("-h", "--help", "help"):
-        print(USAGE)
+    if not args or args[0] in {"-h", "--help", "help"}:
+        usage()
         return 0
 
-    cmd = args[0]
-
-    if cmd == "init":
-        return cmd_init(args[1] if len(args) > 1 else None)
-
-    # All other commands need a project root
-    root = find_project_root()
+    root = project_root()
     if root is None:
-        err("Not in an Azazel project (no schema.cue found)")
-        info("Run 'azazel init' to create one")
+        print("error: not inside an Azazel project (schema.cue + gen_build_spec.sh not found)", file=sys.stderr)
         return 1
 
-    # Check tools
-    if cmd in ("check", "gen", "build", "info"):
-        if not require_tool("cue"):
-            return 1
-    if cmd == "build":
-        if not require_tool("zig"):
-            return 1
-
-    if cmd == "check":
-        return cmd_check(root)
-    elif cmd == "gen":
-        return cmd_gen(root)
-    elif cmd == "build":
-        extra = " ".join(args[1:])
-        return cmd_build(root, extra)
-    elif cmd == "clean":
-        return cmd_clean(root)
-    elif cmd == "info":
-        return cmd_info(root)
-    else:
-        err(f"Unknown command: {cmd}")
-        print(USAGE)
+    command, rest = args[0], args[1:]
+    try:
+        if command == "check":
+            return cmd_check(root)
+        if command == "gen":
+            return cmd_gen(root)
+        if command == "build":
+            return cmd_build(root, rest)
+        if command == "clean":
+            return cmd_clean(root)
+        if command == "info":
+            return cmd_info(root)
+        print(f"error: unknown command: {command}", file=sys.stderr)
+        usage()
+        return 2
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
