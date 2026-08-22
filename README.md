@@ -3,18 +3,24 @@
 [![CI](https://github.com/godofecht/azazel/actions/workflows/ci.yml/badge.svg)](https://github.com/godofecht/azazel/actions/workflows/ci.yml)
 [![Zig](https://img.shields.io/badge/zig-0.14.1%20%7C%200.15.2%20%7C%200.16.0-f7a41d)](https://ziglang.org/)
 
-A deterministic build configuration layer powered by **CUE** for constraint validation and **Zig** for execution. The configuration frontend for [Zaza](https://github.com/godofecht/zaza).
+Azazel is a deterministic, declarative build-model layer for Zig. **CUE** validates a stable project model; Azazel generates typed Zig build data; **Zig** remains the build executor.
 
-**Who this is for:** Zig developers who'd rather declare their build than hand-maintain `std.Build`. You still write your own Zig — Azazel replaces the imperative `build.zig` boilerplate (and the churn of tracking `std.Build` across Zig releases), not the language.
-
-```
-project.cue  →  CUE validates  →  build_spec.zig  →  zig build  →  binary
-  (human)        (schema.cue)      (generated)        (engine)
+```text
+project.cue  ->  CUE validation  ->  build_spec.zig  ->  std.Build  ->  artifacts
+    human          constraints          typed IR          Zig
 ```
 
-No JSON runtime. No flags. No ceremony.
+The point is not to hide Zig. The point is to keep project configuration stable while Azazel absorbs `std.Build` API churn, and to make the build graph available as validated data for analysis, tooling, compatibility work, and eventually safe remote caching.
 
-## What It Looks Like
+## Production status
+
+The core build pipeline is production-supported on Zig **0.14.1, 0.15.2, and 0.16.0**. CI runs the same canonical CLI path users run, forces code generation twice to verify determinism, builds, and runs the test suites on every supported lane.
+
+Azazel is still pre-1.0. Pin the revision or release you adopt and upgrade deliberately. The exact support contract and release gate are in [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
+
+The shared artifact cache is **experimental and disabled by default**. It must not be used for release artifacts until its key proves a complete input closure. See [`CACHE.md`](CACHE.md).
+
+## What it looks like
 
 ```cue
 package build
@@ -32,69 +38,78 @@ app: #Module & {
 }
 ```
 
-That's the core project configuration. Toolchain lanes, import-mode linking,
-and post-build commands are opt-in when a project needs them.
+For a pure Zig dependency, `kind: "module"` is consumed through `@import` and produces no separate artifact. ABI-linked static/shared libraries remain available for C/C++ interoperability and explicit binary boundaries.
 
-## Quick Start
+## Quick start
+
+Prerequisites are Zig, CUE, and Python 3.
 
 ```sh
-brew install cue zig           # prerequisites (also needs python3)
+brew install cue zig
 git clone https://github.com/godofecht/azazel.git
 cd azazel
-./setup.sh                     # check tools, generate, build, test
-./zig-out/bin/app              # run
+./setup.sh
 ```
 
-`setup.sh` reports the versions of `zig`, `cue` and `python3`, prints install
-hints for anything missing, then runs the full pipeline. It uses a
-Zig-version-specific cache directory by default, so switching between the
-0.14/0.15/0.16 lanes does not reuse a stale build runner. It is safe to run
-repeatedly and exits non-zero on the first failure.
+The canonical CLI is the root `azazel` script:
 
 ```sh
-./setup.sh --check-only        # just report tool versions
-./setup.sh --examples          # also build and test everything in examples/
-ZIG=/path/to/zig ./setup.sh    # use a specific Zig binary
-ZIG_CACHE_DIR=/tmp/azazel-cache ./setup.sh
+python3 azazel check              # validate CUE, exported contract, roots, graph
+python3 azazel gen                # generate build_spec.zig
+python3 azazel build              # check + generate + zig build
+python3 azazel build -Dfoo=true   # forward normal Zig build arguments
+python3 azazel info               # print the resolved build model
+python3 azazel clean
 ```
 
-Doing it by hand is three commands:
+The CLI does **not** contain a second generator. `gen_build_spec.sh` is the single CUE-to-Zig implementation used by both direct and CLI workflows.
+
+The equivalent low-level path is:
 
 ```sh
-./gen_build_spec.sh            # CUE validates → generates build_spec.zig
-zig build                      # compile
-zig build test --summary all   # 56 tests
+./gen_build_spec.sh
+zig build
+zig build test --summary all
 ```
 
-## How It Works
+## Why a build model
 
-| Layer | Tool | File | Purpose |
-|-------|------|------|---------|
-| Human | You | `project.cue` | Declare modules, deps, profiles |
-| Constraint | CUE | `schema.cue` | Type-check and resolve defaults |
-| Codegen | Shell | `gen_build_spec.sh` | Emit typed Zig source (not JSON) |
-| Execution | Zig | `build.zig` | Compile and link from spec |
+A hand-written `build.zig` is executable build logic. Azazel moves the project description into a validated model and keeps the compatibility/execution layer separate.
 
-CUE generates **Zig source code**, not JSON. The build system never parses anything at runtime. The module array is a compile-time constant.
+That gives the project a representation which can be checked before compilation, diffed as data, consumed by editor tooling, replayed against multiple Zig lanes, translated into a build graph, and pressure-tested against real repositories without treating arbitrary build-script behavior as the configuration format.
 
-## Module Fields
+The generated `build_spec.zig` is typed Zig source. The executor does not parse JSON at build time.
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `kind` | `"exe"` \| `"static"` \| `"shared"` \| `"module"` | Yes | — | Output type |
-| `root` | `string` | Yes | — | Root source file |
-| `artifact_name` | `string` | No | module key | Name of the produced artifact when it should differ from the module key |
-| `deps` | `[...string]` | No | `[]` | Module dependencies |
-| `profile` | `"debug"` \| `"release"` | No | `"debug"` | Optimization level |
-| `link` | `"abi"` \| `"import"` | No | `"abi"` | How dependents consume this module |
-| `pre` | `[{ argv: [...] }]` | No | `[]` | Commands to run before compiling this module |
-| `post` | `[{ argv: [...] }]` | No | `[]` | Commands to run after installing this module |
-| `pkg_imports` | package import list | No | `[]` | Imports from `build.zig.zon` dependencies |
-| `pkg_library_paths` | package library path list | No | `[]` | Adds library search paths from lazy package dependencies |
-| `build_options` | `[...string]` | No | `[]` | Typed options to expose through an options module |
-| `native` | native metadata | No | `{}` | C sources, include dirs, system libs, frameworks |
+## Supported module surface
 
-`project.cue` can also declare the supported Zig toolchain lanes:
+`#Module` currently models:
+
+| Field | Purpose |
+|---|---|
+| `kind` | `exe`, `static`, `shared`, or module-only target |
+| `root` | Zig root source file |
+| `artifact_name` | Produced artifact name when it differs from the graph/import name |
+| `deps` | Internal module dependencies |
+| `profile` | Debug or release optimization profile |
+| `link` | `import` or ABI consumption |
+| `pre`, `post` | Explicit build-time commands |
+| `install_dirs` | Runtime/resource directory staging |
+| `pkg_imports` | Zig package module imports |
+| `pkg_artifacts` | Artifacts exported by Zig packages |
+| `pkg_library_paths` | Package-provided library search paths |
+| `build_options` | User-selectable typed build options |
+| `option_values` | Fixed typed values injected into an options module |
+| `gen_imports` | Zig modules generated by declared host tools |
+| `build_options_import` | Import name for generated build options |
+| `native` | C sources, includes, objects, system libraries, frameworks, libc/libc++ linkage |
+
+The full schema is in [`schema.cue`](schema.cue) and the worked reference is in [`docs/WIKI.md`](docs/WIKI.md).
+
+A field is considered implemented only when it survives all four layers: schema, CUE export, generated spec, and Zig executor. `python3 azazel check` validates the exported module contract so silently dropped fields fail before compilation.
+
+## Zig compatibility
+
+Projects may declare accepted lanes:
 
 ```cue
 toolchain: zig: {
@@ -103,157 +118,45 @@ toolchain: zig: {
 }
 ```
 
-Azazel intentionally tracks Zig by minor-version lanes because `std.Build`
-changes between Zig releases. The generated `build_spec.zig` records those
-lanes and `build.zig` rejects unsupported lanes before doing any real work.
+The generated build spec records those lanes and `build.zig` rejects an unsupported Zig lane before doing real build work.
 
-Two things that catch people out. Every module also has to be listed in
-`export.cue`'s `_modules` map, or it is silently not built. And by default `deps`
-is a linker edge, so symbols cross it as `pub export fn` / `extern fn` rather
-than as a Zig `@import`. Both are covered in
-[docs/WIKI.md](docs/WIKI.md#deps).
+Release CI currently covers 0.14.1, 0.15.2, and 0.16.0. Zig 0.17 support exists for corpus work but remains best-effort while 0.17 is a moving development target.
 
-Set `link: "import"` on a dependency to consume it as a Zig module instead. It
-merges into its dependents (`@import("name")`) as one compilation, with no
-separate artifact and no link step. That rebuilds much faster on pure
-Zig-to-Zig graphs. Keep the default `"abi"` for shared libraries and C or C++
-interop. See [`link`](docs/WIKI.md#link) and
-[`examples/05-import-mode`](examples/05-import-mode/).
+## Import and ABI graphs
 
-For large Zig projects, prefer `kind: "module"` for named modules that should
-never produce an artifact. A `module` target is always consumed by import.
+Azazel distinguishes two internal dependency shapes.
 
-Large projects can also declare package imports and native link metadata:
+`link: "import"` merges a Zig dependency into the consumer compilation and exposes it through `@import("name")`. It avoids a separate artifact/link step and is the normal choice for pure Zig module edges.
 
-```cue
-options: [{
-    name: "enable_tracy"
-    type: "bool"
-    description: "Enable Tracy instrumentation"
-    default: false
-}]
+`link: "abi"` keeps a separately compiled artifact and links it across an ABI boundary. Shared libraries are always ABI targets. This is the appropriate shape for C/C++ interoperability and deliberate binary boundaries.
 
-app: #Module & {
-    kind: "exe"
-    root: "src/main.zig"
-    build_options: ["enable_tracy"]
-    pkg_imports: [{
-        alias: "known-folders"
-        package: "known_folders"
-        module: "known-folders"
-    }]
-    native: {
-        link_libc: true
-        system_libs: ["sqlite3"]
-        pkg_config_libs: ["libinput"]
-        frameworks: ["CoreFoundation"]
-    }
-}
-```
+Large projects can combine the two into clusters: import-connected modules inside a cluster, with ABI boundaries between clusters. See [`examples/06-clusters`](examples/06-clusters/).
 
-Package imports and artifacts can also pass a package `backend` enum option
-when the dependency declares one:
+## Real-project pressure testing
 
-```cue
-pkg_imports: [{
-    alias: "zgui"
-    package: "zgui"
-    module: "root"
-    backend: "glfw_wgpu"
-}]
-pkg_artifacts: [{
-    package: "zgui"
-    artifact: "imgui"
-    backend: "glfw_wgpu"
-}]
-```
+Azazel maintains a corpus built around ZLS, libxev, River, Mach, MicroZig, libvaxis, Capy, zig-gamedev, TigerBeetle, and Ghostty. The corpus is used to discover missing build-model primitives and toolchain/API failure modes.
 
-## Examples
+Executable parity is claimed only for modeled target slices that actually compile through the Azazel-generated graph. An upstream project's own successful `zig build` is tracked separately and is not reported as Azazel replacement parity.
 
-Four runnable projects, each self-contained with its own README.
+See [`docs/HUGE_PROJECT_CORPUS.md`](docs/HUGE_PROJECT_CORPUS.md).
 
-| Directory | Demonstrates |
-|-----------|--------------|
-| [`examples/01-hello`](examples/01-hello/) | The minimum module. Both schema defaults. |
-| [`examples/02-lib-and-app`](examples/02-lib-and-app/) | `deps`, `profile`, static linkage, the C-ABI boundary. |
-| [`examples/03-services`](examples/03-services/) | All three kinds, a shared library, multiple deps, mixed profiles. |
-| [`examples/04-validation`](examples/04-validation/) | Every rejection the schema performs, with real `cue` output. |
-| [`examples/05-import-mode`](examples/05-import-mode/) | `link: "import"`, a dependency merged as a Zig module instead of linked. |
-| [`examples/06-clusters`](examples/06-clusters/) | Clusters: `import` graphs behind `abi` boundaries, the shape for large projects. |
+## Experimental and dogfood components
 
-```sh
-cd examples/03-services
-./gen_build_spec.sh && zig build && ./zig-out/bin/gateway
-```
+The production build path does not depend on the shared cache, corpus automation, IDE prototypes, or Danzig.
+
+`cache_build.sh` is an explicitly gated cache experiment. `tools/huge_corpus.py` is validation/research infrastructure. `ide/` contains editor experiments. `src/danzig/` is retained as a substantial integration/dogfood workload rather than as part of Azazel's build-system API.
+
+Keeping those boundaries explicit is intentional: experimental surfaces may inform the build model without silently becoming production dependencies.
 
 ## Documentation
 
-**[docs/WIKI.md](docs/WIKI.md)** is the complete reference: the pipeline, every
-schema field with a worked example, how `build_spec.zig` maps onto
-`build.zig`, and troubleshooting for the common failures.
+The complete reference lives in [`docs/WIKI.md`](docs/WIKI.md). Production guarantees are defined in [`docs/PRODUCTION.md`](docs/PRODUCTION.md). Contribution requirements are in [`CONTRIBUTING.md`](CONTRIBUTING.md), and security reporting guidance is in [`SECURITY.md`](SECURITY.md).
 
-Published at [godofecht.github.io/azazel](https://godofecht.github.io/azazel/),
-regenerated from [docs/WIKI.md](docs/WIKI.md) on every change.
+The generated documentation site is published from the repository's documentation sources on GitHub Pages.
 
-- [Huge Zig Project Corpus](docs/HUGE_PROJECT_CORPUS.md)
-- [The Pipeline](https://godofecht.github.io/azazel/pipeline.html)
-- [Installation](https://godofecht.github.io/azazel/installation.html)
-- [Quickstart](https://godofecht.github.io/azazel/quickstart.html)
-- [Schema Reference](https://godofecht.github.io/azazel/schema-reference.html)
-- [Code Generation](https://godofecht.github.io/azazel/code-generation.html)
-- [Examples](https://godofecht.github.io/azazel/examples.html)
-- [Troubleshooting](https://godofecht.github.io/azazel/troubleshooting.html)
+## Zaza
 
-The corpus runner also has an executable parity lane:
-`tools/huge_corpus.py --executable-parity` regenerates Azazel's build spec in a
-repo-local `.azazel/parity-work/` workspace and runs modeled target slices
-against upstream source. The modeled slices cover the `libxev` module probe,
-`libvaxis` package-backed module probe, and `zig-gamedev` shared vectormath
-module plus pinned `zmath`/`zopengl`/`zglfw`/`zmesh`/`znoise` package probe.
-`zig-gamedev` also links exported native package artifacts from `zglfw`,
-`zmesh`, and `znoise` through the generated parity workspace and verifies
-staged `sdl2_demo_content` assets under an explicit install prefix. `libvaxis`
-resolves local `zigimg` and `uucode` path dependencies through the generated
-parity workspace, and strict install-path parity exposes its remaining
-generated Unicode config gap.
-Use `tools/huge_corpus.py --plan --expect-count 10` before a full batch run to
-write `corpus-plan.json` and verify that all ten tracked forks are selected.
-Use `tools/huge_corpus.py --roadmap --expect-count 10` to generate
-`corpus-roadmap.md` plus issue-ready markdown files under `corpus-issues/` from
-the same manifest data.
-Future entries can stay marked `unverified` until their real baseline command
-has been run and classified.
-
-## Editor support
-
-[`ide/`](ide/) has a VS Code extension for authoring `project.cue`: syntax
-highlighting for the `#Module` fields, inline diagnostics that run
-`cue export -e build` on save, graph warnings for missing dependency targets and
-unexported modules, completion for fields and enum values, hover help, and
-go-to-definition from `deps` strings to module declarations. It also adds an
-"Azazel: Generate build_spec" command. Open `ide/vscode` in VS Code and press F5
-to try it; see [`ide/vscode/README.md`](ide/vscode/README.md).
-
-A dependency-free stdio language server with the same diagnostics, completion,
-hover, and definition behavior lives in [`ide/server`](ide/server/); see
-[`ide/DESIGN.md`](ide/DESIGN.md).
-
-## Install
-
-Azazel ships a `build.zig.zon`, so it is fetchable with the Zig package manager:
-
-```sh
-zig fetch --save git+https://github.com/godofecht/azazel
-```
-
-Most projects use it as a starting point rather than a linked dependency: copy a
-directory from `examples/` (or the repo root) and edit `project.cue`. The
-maintained Zig lanes are 0.14.x, 0.15.x, and 0.16.x; project configs can narrow
-that list with `toolchain.zig.lanes`.
-
-## Part of the Zaza Ecosystem
-
-Azazel is the declarative configuration frontend for [Zaza](https://github.com/godofecht/zaza), a Zig-driven build system for C, C++, Zig, CMake-interop, and WebAssembly. Azazel can also be used standalone with any Zig project.
+Azazel is the declarative configuration frontend for [Zaza](https://github.com/godofecht/zaza), a Zig-driven build system for C, C++, Zig, CMake interoperability, and WebAssembly. Azazel can also be used directly for Zig projects.
 
 ## License
 
