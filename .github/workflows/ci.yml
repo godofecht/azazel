@@ -38,6 +38,7 @@ jobs:
         run: |
           python3 -m py_compile azazel scripts/build_site.py tools/huge_corpus.py
           sh -n gen_build_spec.sh setup.sh cache_key.sh cache_build.sh
+          python3 scripts/build_site.py
 
       - name: Validate CLI and exported build contract
         run: python3 azazel check
