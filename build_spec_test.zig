@@ -39,6 +39,34 @@ test "package declarations are well-formed" {
     }
 }
 
+test "system dependencies are well-formed" {
+    const known_os = [_][]const u8{ "linux", "macos", "windows", "freebsd", "netbsd", "openbsd" };
+    for (spec.system_deps, 0..) |dep, i| {
+        try testing.expect(dep.name.len > 0);
+        for (dep.os) |os| {
+            var known = false;
+            for (known_os) |candidate| {
+                if (std.mem.eql(u8, os, candidate)) known = true;
+            }
+            try testing.expect(known);
+        }
+        // Only a pkg-config probe can compare versions.
+        if (dep.min_version != null) try testing.expect(dep.kind == .pkg_config);
+        // One declaration per kind and name.
+        for (spec.system_deps[i + 1 ..]) |other| {
+            try testing.expect(!(dep.kind == other.kind and std.mem.eql(u8, dep.name, other.name)));
+        }
+    }
+}
+
+test "the project declares the host tools its pipeline needs" {
+    var found_python = false;
+    for (spec.system_deps) |dep| {
+        if (dep.kind == .tool and std.mem.eql(u8, dep.name, "python3")) found_python = true;
+    }
+    try testing.expect(found_python);
+}
+
 test "build options are unique and typed" {
     for (spec.options, 0..) |a, i| {
         try testing.expect(a.name.len > 0);
@@ -195,7 +223,7 @@ fn hasModule(name: []const u8) bool {
 }
 
 test "every declared dependency resolves to a declared module" {
-    // build.zig does `built.get(dep).?` — an unresolved dep panics there.
+    // build.zig does `built.get(dep).?`, so an unresolved dep panics there.
     for (spec.modules) |m| {
         for (m.deps) |dep| {
             try testing.expect(hasModule(dep));

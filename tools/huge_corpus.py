@@ -32,6 +32,50 @@ BRANCH = "azazel-zaza-integration"
 OUTPUT_TAIL_BYTES = 12000
 
 
+SYSTEM_KINDS = ("tool", "pkg_config", "library", "framework", "header", "include_dir")
+
+
+@dataclass(frozen=True)
+class SystemRequirement:
+    """One thing the host must provide, in the shape of `#SystemDep` in schema.cue."""
+
+    name: str
+    kind: str
+    os: tuple[str, ...] = ()
+    min_version: str = ""
+    hint: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in SYSTEM_KINDS:
+            raise ValueError(f"system requirement {self.name!r}: unknown kind {self.kind!r}")
+
+    def manifest(self) -> dict[str, object]:
+        data: dict[str, object] = {"name": self.name, "kind": self.kind, "os": list(self.os)}
+        if self.min_version:
+            data["min_version"] = self.min_version
+        if self.hint:
+            data["hint"] = self.hint
+        return data
+
+    def cue(self) -> str:
+        fields = [f"name: {json.dumps(self.name)}", f"kind: {json.dumps(self.kind)}"]
+        if self.os:
+            fields.append("os: [" + ", ".join(json.dumps(item) for item in self.os) + "]")
+        if self.min_version:
+            fields.append(f"min_version: {json.dumps(self.min_version)}")
+        if self.hint:
+            fields.append(f"hint: {json.dumps(self.hint)}")
+        return "{" + ", ".join(fields) + "}"
+
+
+def tool(name: str, hint: str = "", os: tuple[str, ...] = ()) -> SystemRequirement:
+    return SystemRequirement(name, "tool", os, hint=hint)
+
+
+def pkg(name: str, hint: str = "", os: tuple[str, ...] = (), min_version: str = "") -> SystemRequirement:
+    return SystemRequirement(name, "pkg_config", os, min_version, hint)
+
+
 @dataclass(frozen=True)
 class Repo:
     name: str
@@ -47,9 +91,10 @@ class Repo:
     expected_classification: str
     first_targets: tuple[str, ...]
     system_deps: tuple[str, ...] = ()
-    required_tools: tuple[str, ...] = ()
-    pkg_config_libs: tuple[str, ...] = ()
     replacement_gaps: tuple[str, ...] = ()
+    # Typed host requirements. The overlay project.cue receives the same list
+    # as `system_deps`, so the corpus and an Azazel project share one shape.
+    requirements: tuple[SystemRequirement, ...] = ()
     integration_kind: str = "azazel"
     parity_status: str = "scaffold-only"
     executable_parity_status: str = "not-modeled"
@@ -61,6 +106,14 @@ class Repo:
     # read as one exact release. This is separate from the Azazel generator
     # lanes written into the overlay project.cue.
     toolchain: ToolchainSpec | None = None
+
+    @property
+    def required_tools(self) -> tuple[str, ...]:
+        return tuple(item.name for item in self.requirements if item.kind == "tool")
+
+    @property
+    def pkg_config_libs(self) -> tuple[str, ...]:
+        return tuple(item.name for item in self.requirements if item.kind == "pkg_config")
 
     def required_toolchain(self) -> ToolchainSpec:
         return self.toolchain or ToolchainSpec.exact(self.build_zig)
@@ -85,6 +138,7 @@ class Repo:
             "system_deps": list(self.system_deps),
             "required_tools": list(self.required_tools),
             "pkg_config_libs": list(self.pkg_config_libs),
+            "requirements": [item.manifest() for item in self.requirements],
             "replacement_gaps": list(self.replacement_gaps),
             "integration_kind": self.integration_kind,
             "parity_status": self.parity_status,
@@ -133,6 +187,10 @@ REPOS = [
         "zig-api-drift",
         ("lib:xev", "examples", "benchmarks", "manpage generation"),
         replacement_gaps=("library variants", "generated pkg-config/manpage outputs", "test artifact checks"),
+        requirements=(
+            SystemRequirement("ws2_32", "library", ("windows",)),
+            SystemRequirement("mswsock", "library", ("windows",)),
+        ),
         executable_parity_status="ready",
         executable_parity_command=("zig", "build", "--summary", "all"),
         expected_executable_parity_classification="ok",
@@ -152,9 +210,19 @@ REPOS = [
         "zig-toolchain",
         ("exe:river", "generated protocol modules", "C/system link metadata"),
         ("pkg-config", "wayland", "wlroots", "libevdev", "xkbcommon", "pixman"),
-        ("pkg-config", "wayland-scanner"),
-        ("wayland-scanner",),
         ("system dependency preflight", "generated protocol modules", "pkg-config link metadata"),
+        requirements=(
+            tool("pkg-config"),
+            tool("wayland-scanner", "part of the wayland development package"),
+            pkg("wayland-scanner"),
+            pkg("wayland-protocols"),
+            pkg("wayland-server"),
+            pkg("wlroots-0.20"),
+            pkg("xkbcommon"),
+            pkg("pixman-1"),
+            pkg("libevdev"),
+            pkg("libinput"),
+        ),
     ),
     Repo(
         "mach",
@@ -282,7 +350,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:tigerbeetle", "tests", "simulator", "release/package steps"),
-        required_tools=("git",),
+        requirements=(tool("git"),),
         replacement_gaps=(
             "large test matrix",
             "release/package artifact graph",
@@ -303,7 +371,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:ghostty", "native/system deps", "resources", "macOS app bundle/package steps"),
-        required_tools=("pkg-config",),
+        requirements=(tool("pkg-config"),),
         replacement_gaps=(
             "native dependency preflight",
             "resource and app-bundle staging",
@@ -426,6 +494,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                     "system_deps": list(repo.system_deps),
                     "required_tools": list(repo.required_tools),
                     "pkg_config_libs": list(repo.pkg_config_libs),
+                    "requirements": [item.manifest() for item in repo.requirements],
                     "replacement_gaps": list(repo.replacement_gaps),
                     "integration_kind": repo.integration_kind,
                     "executable_parity": {
@@ -472,10 +541,21 @@ toolchain: zig: {
     preferred: "%s"
 }
 """
-        % cue_preferred_lane(repo),
+        % cue_preferred_lane(repo)
+        + system_deps_cue(repo),
         encoding="utf-8",
     )
     write_executable_parity_workspace(path, repo)
+
+
+def system_deps_cue(repo: Repo) -> str:
+    """The repo's host requirements as a `system_deps` declaration."""
+    if not repo.requirements:
+        return ""
+    lines = ["", "system_deps: ["]
+    lines.extend(f"    {item.cue()}," for item in repo.requirements)
+    lines.append("]")
+    return "\n".join(lines) + "\n"
 
 
 def write_executable_parity_workspace(path: Path, repo: Repo) -> None:
@@ -528,6 +608,7 @@ _modules: {
 _toolchain: toolchain
 _packages: packages
 _options: options
+_system_deps: system_deps
 
 build: modules: {
     for k, v in _modules {
@@ -553,6 +634,7 @@ build: modules: {
 build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
+build: system_deps: _system_deps
 """,
             encoding="utf-8",
         )
@@ -816,6 +898,7 @@ _modules: {
 _toolchain: toolchain
 _packages: packages
 _options: options
+_system_deps: system_deps
 
 build: modules: {
     for k, v in _modules {
@@ -841,6 +924,7 @@ build: modules: {
 build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
+build: system_deps: _system_deps
 """,
         encoding="utf-8",
     )
@@ -1231,42 +1315,90 @@ def command_with_zig(command: list[str], zig: str) -> list[str]:
     return command
 
 
-def pkg_config_available(name: str) -> bool:
+def pkg_config_available(name: str, min_version: str = "") -> bool:
     if not shutil.which("pkg-config"):
         return False
+    command = ["pkg-config", "--exists"]
+    if min_version:
+        command.append(f"--atleast-version={min_version}")
     return subprocess.run(
-        ["pkg-config", "--exists", name],
+        command + [name],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
     ).returncode == 0
 
 
+def host_os() -> str:
+    return zig_toolchain.host_platform().split("-", 1)[1]
+
+
+def system_preflight(repo: Repo) -> dict[str, object]:
+    """Probe the repo's declared host requirements without building anything.
+
+    Tools and pkg-config libraries are probed here. The other kinds need a
+    compiler probe, which the generated build runs through `zig build doctor`;
+    they are recorded with `checked: false` and never counted as missing.
+    """
+    current_os = host_os()
+    results = []
+    for item in repo.requirements:
+        entry = item.manifest()
+        applies = not item.os or current_os in item.os
+        entry.update({"applies": applies, "checked": False, "found": None, "detail": ""})
+        if not applies:
+            entry["detail"] = f"not required on {current_os}"
+        elif item.kind == "tool":
+            path = shutil.which(item.name) or ""
+            entry.update({"checked": True, "found": bool(path), "detail": path or "not found on PATH"})
+        elif item.kind == "pkg_config":
+            found = pkg_config_available(item.name, item.min_version)
+            if found:
+                detail = "found by pkg-config"
+            elif not shutil.which("pkg-config"):
+                detail = "pkg-config is not on PATH"
+            else:
+                detail = "not known to pkg-config"
+            entry.update({"checked": True, "found": found, "detail": detail})
+        else:
+            entry["detail"] = "probed by zig build doctor in a generated build"
+        results.append(entry)
+    missing = [entry for entry in results if entry["checked"] and not entry["found"]]
+    lines = []
+    for entry in missing:
+        label = "pkg-config library" if entry["kind"] == "pkg_config" else entry["kind"]
+        line = f"missing declared system requirement: {label} {entry['name']} ({entry['detail']})"
+        if entry.get("hint"):
+            line += f"; {entry['hint']}"
+        lines.append(line)
+    return {
+        "ready": not missing,
+        "requirements": results,
+        "missing": [f"{'pkg-config' if entry['kind'] == 'pkg_config' else entry['kind']}:{entry['name']}" for entry in missing],
+        "diagnostic": "\n".join(lines),
+    }
+
+
 def doctor_entry(repo: Repo) -> dict[str, object]:
     resolution = resolve_toolchain(repo)
     zig = resolution.path
+    preflight = system_preflight(repo)
     tools = [
-        {
-            "name": tool,
-            "path": shutil.which(tool) or "",
-            "found": shutil.which(tool) is not None,
-        }
-        for tool in repo.required_tools
+        {"name": entry["name"], "path": entry["detail"] if entry["found"] else "", "found": bool(entry["found"])}
+        for entry in preflight["requirements"]
+        if entry["kind"] == "tool" and entry["applies"]
     ]
     pkg_config = [
-        {
-            "name": lib,
-            "found": pkg_config_available(lib),
-        }
-        for lib in repo.pkg_config_libs
+        {"name": entry["name"], "found": bool(entry["found"])}
+        for entry in preflight["requirements"]
+        if entry["kind"] == "pkg_config" and entry["applies"]
     ]
-    ready = bool(zig) and all(tool["found"] for tool in tools) and all(lib["found"] for lib in pkg_config)
+    ready = bool(zig) and preflight["ready"]
     missing = []
     if not zig:
         missing.append(f"zig:{repo.build_zig}")
     blocked = resolution.status if not zig else "doctor-blocked"
-    missing.extend(f"tool:{tool['name']}" for tool in tools if not tool["found"])
-    missing.extend(f"pkg-config:{lib['name']}" for lib in pkg_config if not lib["found"])
+    missing.extend(preflight["missing"])
     return {
         "name": repo.name,
         "ready": ready,
@@ -1274,6 +1406,7 @@ def doctor_entry(repo: Repo) -> dict[str, object]:
         "toolchain": resolution.as_dict(),
         "required_tools": tools,
         "pkg_config_libs": pkg_config,
+        "requirements": preflight["requirements"],
         "system_deps": list(repo.system_deps),
         "first_targets": list(repo.first_targets),
         "replacement_gaps": list(repo.replacement_gaps),
@@ -1315,7 +1448,8 @@ def next_action(repo: Repo, classification: str, output: str) -> str:
             return f"no index or mirror served {spec.requirement()}; install it by hand and set {spec.env_key}"
         return f"install {spec.requirement()}, set {spec.env_key}, or rerun with --fetch-toolchains"
     if classification == "system-dependency":
-        deps = ", ".join(repo.system_deps or repo.required_tools)
+        missing = system_preflight(repo)["missing"]
+        deps = ", ".join(missing or repo.system_deps or repo.required_tools)
         return f"install host system dependencies, then rerun --doctor and --build: {deps}"
     if classification == "dependency-fetch":
         return "fix dependency archive/cache fetching before translating the target slice"
@@ -1337,11 +1471,19 @@ def run_build(root: Path, repos: list[Repo]) -> None:
         # absent is reported from the manifest alone.
         resolution = resolve_toolchain(repo)
         zig = resolution.path
+        preflight = system_preflight(repo)
         if not zig:
             classification = resolution.status
             output = resolution.diagnostic
             returncode = 127
             command = list(repo.build_command)
+        elif not preflight["ready"]:
+            # A declared requirement is absent. Report it as such and do not
+            # start a build that can only fail on it.
+            classification = "system-dependency"
+            output = str(preflight["diagnostic"])
+            returncode = 127
+            command = command_with_zig(list(repo.build_command), zig)
         else:
             path = ensure_clone(root, repo)
             command = command_with_zig(list(repo.build_command), zig)
@@ -1377,6 +1519,7 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 "system_deps": list(repo.system_deps),
                 "required_tools": list(repo.required_tools),
                 "pkg_config_libs": list(repo.pkg_config_libs),
+                "system_requirements": preflight,
                 "replacement_gaps": list(repo.replacement_gaps),
                 "next_action": next_action(repo, classification, output),
                 "output": output,
@@ -1388,6 +1531,9 @@ def run_build(root: Path, repos: list[Repo]) -> None:
         )
         if not zig:
             print(f"  toolchain: {resolution.diagnostic}")
+        elif not preflight["ready"]:
+            for line in str(preflight["diagnostic"]).splitlines():
+                print(f"  {line}")
     (root / "build-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1415,6 +1561,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                 "system_deps": list(repo.system_deps),
                 "required_tools": list(repo.required_tools),
                 "pkg_config_libs": list(repo.pkg_config_libs),
+                "requirements": [item.manifest() for item in repo.requirements],
                 "replacement_gaps": list(repo.replacement_gaps),
                 "integration_kind": repo.integration_kind,
                 "executable_parity": {

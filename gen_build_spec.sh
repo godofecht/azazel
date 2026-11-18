@@ -63,6 +63,16 @@ pub const Option = struct {
     u32_default: ?u32,
 };
 
+pub const SystemDepKind = enum { tool, pkg_config, library, framework, header, include_dir };
+
+pub const SystemDep = struct {
+    name: []const u8,
+    kind: SystemDepKind,
+    os: []const []const u8,
+    min_version: ?[]const u8,
+    hint: []const u8,
+};
+
 pub const PackageImport = struct {
     alias: []const u8,
     package: []const u8,
@@ -217,6 +227,33 @@ for item in data.get('options', []):
           + ', .bool_default = ' + zig_optional_bool(bool_default)
           + ', .string_default = ' + zig_optional_string(string_default)
           + ', .u32_default = ' + zig_optional_u32(u32_default)
+          + ' },')
+print('};')
+print()
+" >> build_spec.zig
+
+echo "$DATA" | python3 -c "
+import json, sys
+
+def zig_string(s):
+    return json.dumps(s)
+
+def zig_optional_string(s):
+    return 'null' if s is None else zig_string(s)
+
+def zig_string_list(items):
+    if items:
+        return '&.{ ' + ', '.join(zig_string(item) for item in items) + ' }'
+    return '&.{}'
+
+data = json.load(sys.stdin)
+print('pub const system_deps = [_]SystemDep{')
+for item in data.get('system_deps', []):
+    print('    .{ .name = ' + zig_string(item['name'])
+          + ', .kind = .' + item['kind']
+          + ', .os = ' + zig_string_list(item.get('os', []))
+          + ', .min_version = ' + zig_optional_string(item.get('min_version'))
+          + ', .hint = ' + zig_string(item.get('hint', ''))
           + ' },')
 print('};')
 print()

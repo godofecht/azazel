@@ -173,8 +173,61 @@ work. `debug` resolves to Zig `Debug`; `release` resolves to `ReleaseFast`.
 
 `native` can describe C sources, include/system-include directories, library
 paths, object files, system libraries, pkg-config libraries, Apple frameworks,
-and libc/libc++ linkage. System availability is still external; richer
-first-class prerequisite diagnostics are on the roadmap.
+and libc/libc++ linkage. `native` says what to link. Whether the machine has
+those things is declared separately in `system_deps`.
+
+### System dependencies
+
+`system_deps` is a top-level list of things the machine must provide. It is
+checked before any artifact compiles.
+
+```cue
+system_deps: [
+    {name: "wayland-scanner", kind: "tool", hint: "part of the wayland development package"},
+    {name: "wlroots-0.20", kind: "pkg_config"},
+    {name: "xkbcommon", kind: "pkg_config", min_version: "1.5"},
+    {name: "ws2_32", kind: "library", os: ["windows"]},
+    {name: "Cocoa", kind: "framework", os: ["macos"]},
+    {name: "zlib.h", kind: "header"},
+    {name: "vendor/include", kind: "include_dir"},
+]
+```
+
+| Kind | Requirement | Probe |
+|---|---|---|
+| `tool` | a program on `PATH` | `std.Build.findProgram` |
+| `pkg_config` | a library known to pkg-config | `pkg-config --exists`, with `--atleast-version` when `min_version` is set |
+| `library` | a system library | links a one-line C program with `zig cc -l<name>` |
+| `framework` | an Apple framework | links the same program with `zig cc -framework <name>` |
+| `header` | a C header | compiles `#include <name>` with `zig cc`, searching every declared `include_dir` |
+| `include_dir` | a directory, relative to the project root or absolute | checked for existence |
+
+`os` limits a requirement to the listed operating systems: `linux`, `macos`,
+`windows`, `freebsd`, `netbsd`, `openbsd`. A `tool` is matched against the host.
+Every other kind is matched against the build target. An empty list means every
+platform. `hint` is printed next to a missing requirement.
+
+The generated build exposes the checks as a `doctor` step. Every artifact and
+the install step depend on it.
+
+```sh
+python3 azazel doctor   # validate, generate, then run `zig build doctor`
+zig build doctor        # the same checks, without the CLI
+zig build               # runs the checks first and stops if one fails
+```
+
+A missing requirement looks like this:
+
+```text
+error: missing system dependency: tool wayland-scanner (part of the wayland development package): not found on PATH
++- system dependency: pkg-config library wlroots-0.20 failure
+```
+
+Header, library and framework probes run only when the target is the host.
+When cross-compiling they are skipped and the compiler reports them.
+
+`system_deps` states what must be present. It links nothing. Linking stays in
+each module's `native` block.
 
 ### Options, packages, and generated modules
 
@@ -223,7 +276,7 @@ Run them with:
 ./setup.sh --examples
 ```
 
-Danzig examples are dogfood workloads, not part of the Azazel build-system API.
+Danzig examples are dogfood workloads. They sit outside the Azazel build-system API.
 
 ## Editor support
 

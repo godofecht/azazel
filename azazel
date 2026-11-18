@@ -74,6 +74,9 @@ def validate_graph(data: dict, root: Path) -> list[str]:
     if not isinstance(modules, dict) or not modules:
         return ["build.modules must contain at least one module"]
 
+    if not isinstance(data.get("system_deps"), list):
+        errors.append("build.system_deps is not exported; add `build: system_deps: _system_deps` to export.cue")
+
     names = set(modules)
     graph: dict[str, list[str]] = {}
 
@@ -150,6 +153,21 @@ def cmd_build(root: Path, extra: list[str]) -> int:
     return result.returncode
 
 
+def cmd_doctor(root: Path) -> int:
+    """Check the declared system dependencies without building any artifact."""
+    data = cue_export(root)
+    deps = data.get("system_deps") or []
+    if cmd_gen(root) != 0:
+        return 1
+    require_tool("zig")
+    result = run(["zig", "build", "doctor"], cwd=root, capture=False)
+    if result.returncode != 0:
+        print("azazel: system dependencies are missing; see the errors above", file=sys.stderr)
+        return result.returncode
+    print(f"azazel: system dependencies satisfied ({len(deps)} declared)")
+    return 0
+
+
 def cmd_clean(root: Path) -> int:
     for name in ("build_spec.zig", ".build_spec.stamp"):
         path = root / name
@@ -173,6 +191,7 @@ def usage() -> None:
         "usage:\n"
         "  azazel check\n"
         "  azazel gen\n"
+        "  azazel doctor\n"
         "  azazel build [zig build args...]\n"
         "  azazel clean\n"
         "  azazel info"
@@ -196,6 +215,8 @@ def main() -> int:
             return cmd_check(root)
         if command == "gen":
             return cmd_gen(root)
+        if command == "doctor":
+            return cmd_doctor(root)
         if command == "build":
             return cmd_build(root, rest)
         if command == "clean":

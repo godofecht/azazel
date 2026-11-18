@@ -12,6 +12,7 @@ _modules: {
 _toolchain: toolchain
 _packages: packages
 _options: options
+_system_deps: system_deps
 
 build: modules: {
 	for k, v in _modules {
@@ -42,3 +43,4 @@ build: modules: {
 build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
+build: system_deps: _system_deps

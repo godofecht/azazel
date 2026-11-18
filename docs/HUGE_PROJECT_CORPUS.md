@@ -313,6 +313,40 @@ root the same command reports `unsupported-toolchain`. `--fetch-toolchains` was
 also used to install the official `0.16.0` release. The Mach download was not
 run on this host.
 
+## System Requirements
+
+Each corpus manifest lists typed host requirements under `requirements`, in the
+same shape as `#SystemDep` in `schema.cue`: `name`, `kind`, `os`, optional
+`min_version` and `hint`. `--prepare` writes the same list into the overlay
+`project.cue` as `system_deps`, so a repo's requirements are already Azazel
+project data when a target slice is modeled.
+
+River declares the tools `pkg-config` and `wayland-scanner` and the pkg-config
+libraries `wayland-scanner`, `wayland-protocols`, `wayland-server`,
+`wlroots-0.20`, `xkbcommon`, `pixman-1`, `libevdev` and `libinput`. libxev
+declares `ws2_32` and `mswsock` as libraries on Windows only.
+
+`--doctor` and `--build` probe tools with `PATH` and pkg-config libraries with
+`pkg-config --exists`. Requirements whose `os` excludes the host are skipped.
+Library, framework, header and include-directory requirements are recorded with
+`checked: false`. Those need a compiler probe, which a generated Azazel build
+runs through `zig build doctor`.
+
+`--build` runs this preflight after the toolchain resolves and before cloning.
+A missing requirement gives `system-dependency` from the manifest alone:
+
+```text
+$ tools/huge_corpus.py --build --repo river
+river: build system-dependency (expected system-dependency)
+  missing declared system requirement: tool wayland-scanner (not found on PATH); part of the wayland development package
+  missing declared system requirement: pkg-config library wlroots-0.20 (not known to pkg-config)
+  ...
+```
+
+The result carries a `system_requirements` object with one entry per
+requirement: whether it applies on this host, whether it was checked, whether
+it was found, and a detail line.
+
 ## Doctor Output
 
 `tools/huge_corpus.py --doctor` answers "can this host run the declared proof
@@ -324,6 +358,7 @@ command?" without cloning or compiling. Useful statuses:
 | `toolchain.status` | `found`, `missing-toolchain`, `unsupported-toolchain`, or `toolchain-fetch-failed`. |
 | `toolchain.diagnostic` | The requirement, the binaries that were rejected and why, and how to supply one. |
 | `required_tools` | Host commands such as `pkg-config` or `wayland-scanner`. |
+| `requirements` | Every typed requirement with `applies`, `checked`, `found` and `detail`. |
 | `pkg_config_libs` | Libraries probed through `pkg-config --exists`. |
 | `replacement_gaps` | Build-graph features Azazel/Zaza must model before claiming replacement value. |
 | `next_action` | Concrete next step for the repo's current state. |

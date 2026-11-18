@@ -107,6 +107,20 @@ The full schema is in [`schema.cue`](schema.cue) and the worked reference is in 
 
 A field is considered implemented only when it survives all four layers: schema, CUE export, generated spec, and Zig executor. `python3 azazel check` validates the exported module contract so silently dropped fields fail before compilation.
 
+## System dependencies
+
+Host requirements are declared once, at the top level of `project.cue`:
+
+```cue
+system_deps: [
+    {name: "wayland-scanner", kind: "tool", hint: "part of the wayland development package"},
+    {name: "wlroots-0.20", kind: "pkg_config"},
+    {name: "Cocoa", kind: "framework", os: ["macos"]},
+]
+```
+
+A requirement is a `tool`, a `pkg_config` library, a system `library`, a `framework`, a `header`, or an `include_dir`. `os` limits it to the listed platforms. `zig build` checks every requirement before any artifact compiles and prints each missing one with its `hint`. `python3 azazel doctor` runs the same checks without building. See the schema reference in [`docs/WIKI.md`](docs/WIKI.md).
+
 ## Zig compatibility
 
 Projects may declare accepted lanes:

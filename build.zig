@@ -1,6 +1,7 @@
 const std = @import("std");
 const spec = @import("build_spec.zig");
 const builtin = @import("builtin");
+const compat = @import("compat.zig");
 
 fn laneMatchesCurrent(comptime lane: []const u8) bool {
     if (std.mem.eql(u8, lane, "0.14")) {
@@ -172,7 +173,7 @@ fn generatedModule(b: *std.Build, gen: spec.GeneratedImport) *std.Build.Module {
     // Compile the repo's host tool, run it, and turn the file it writes into a
     // module. The tool builds for the host (it runs at build time), and the run
     // captures each output file's path from the build graph so the emitted file
-    // is a real dependency, not a fixed path on disk.
+    // is a real dependency of the build graph.
     const tool = b.addExecutable(.{
         .name = gen.tool_name,
         .root_module = b.createModule(.{
@@ -230,6 +231,116 @@ fn applyNative(b: *std.Build, mod: *std.Build.Module, native: spec.Native) void 
     for (native.frameworks) |framework| {
         mod.linkFramework(framework, .{});
     }
+}
+
+fn systemDepApplies(dep: spec.SystemDep, host: std.Target, target: std.Target) bool {
+    if (dep.os.len == 0) return true;
+    // A tool runs on the machine doing the build. Everything else is consumed
+    // by the artifact, so it follows the target.
+    const tag = if (dep.kind == .tool) host.os.tag else target.os.tag;
+    for (dep.os) |name| {
+        if (std.mem.eql(u8, name, @tagName(tag))) return true;
+    }
+    return false;
+}
+
+fn systemDepLabel(b: *std.Build, dep: spec.SystemDep) []const u8 {
+    const what = switch (dep.kind) {
+        .tool => "tool",
+        .pkg_config => "pkg-config library",
+        .library => "system library",
+        .framework => "framework",
+        .header => "header",
+        .include_dir => "include directory",
+    };
+    if (dep.hint.len == 0) return b.fmt("system dependency: {s} {s}", .{ what, dep.name });
+    return b.fmt("system dependency: {s} {s} ({s})", .{ what, dep.name, dep.hint });
+}
+
+/// Check every declared system dependency before any artifact compiles.
+///
+/// Tools and include directories are checked while the graph is configured.
+/// pkg-config libraries are probed with `pkg-config --exists`. Headers,
+/// libraries and frameworks are probed by compiling or linking a one-line C
+/// program with `zig cc`, and only when the target is the host.
+fn addSystemPreflight(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step {
+    const doctor = b.step("doctor", "Check the system dependencies declared in project.cue");
+    const host = b.graph.host.result;
+    const native = target.result.os.tag == host.os.tag and target.result.cpu.arch == host.cpu.arch;
+    const ioh = if (compat.has_io) b.graph.io else {};
+
+    var probe_source: ?std.Build.LazyPath = null;
+
+    for (spec.system_deps) |dep| {
+        if (!systemDepApplies(dep, host, target.result)) continue;
+        const label = systemDepLabel(b, dep);
+
+        switch (dep.kind) {
+            .tool => {
+                _ = b.findProgram(&.{dep.name}, &.{}) catch {
+                    const fail = b.addFail(b.fmt("missing {s}: not found on PATH", .{label}));
+                    doctor.dependOn(&fail.step);
+                };
+            },
+            .include_dir => {
+                if (!compat.exists(ioh, b.pathFromRoot(dep.name))) {
+                    const fail = b.addFail(b.fmt("missing {s}: directory does not exist", .{label}));
+                    doctor.dependOn(&fail.step);
+                }
+            },
+            .pkg_config => {
+                _ = b.findProgram(&.{"pkg-config"}, &.{}) catch {
+                    const fail = b.addFail(b.fmt("missing {s}: pkg-config is not on PATH", .{label}));
+                    doctor.dependOn(&fail.step);
+                    continue;
+                };
+                const run = b.addSystemCommand(&.{ "pkg-config", "--exists", "--print-errors" });
+                if (dep.min_version) |version| run.addArg(b.fmt("--atleast-version={s}", .{version}));
+                run.addArg(dep.name);
+                run.setName(label);
+                doctor.dependOn(&run.step);
+            },
+            .header, .library, .framework => {
+                if (!native) continue;
+                const source = probe_source orelse blk: {
+                    const files = b.addWriteFiles();
+                    const path = files.add("azazel_probe.c", "int main(void) { return 0; }\n");
+                    probe_source = path;
+                    break :blk path;
+                };
+                const run = b.addSystemCommand(&.{ b.graph.zig_exe, "cc" });
+                run.setName(label);
+                switch (dep.kind) {
+                    .header => {
+                        run.addArgs(&.{ "-c", "-include", dep.name });
+                        for (spec.system_deps) |other| {
+                            if (other.kind != .include_dir) continue;
+                            if (!systemDepApplies(other, host, target.result)) continue;
+                            run.addArgs(&.{ "-I", b.pathFromRoot(other.name) });
+                        }
+                        run.addFileArg(source);
+                        run.addArg("-o");
+                        _ = run.addOutputFileArg("azazel_probe.o");
+                    },
+                    .library => {
+                        run.addFileArg(source);
+                        run.addArg(b.fmt("-l{s}", .{dep.name}));
+                        run.addArg("-o");
+                        _ = run.addOutputFileArg("azazel_probe");
+                    },
+                    .framework => {
+                        run.addFileArg(source);
+                        run.addArgs(&.{ "-framework", dep.name });
+                        run.addArg("-o");
+                        _ = run.addOutputFileArg("azazel_probe");
+                    },
+                    else => unreachable,
+                }
+                doctor.dependOn(&run.step);
+            },
+        }
+    }
+    return doctor;
 }
 
 fn dependencyWithoutBackend(
@@ -407,6 +518,11 @@ fn dependencyForArtifact(
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
+    // Every artifact and the install step wait on the system preflight, so a
+    // missing host requirement is reported before any compile starts.
+    const preflight = addSystemPreflight(b, target);
+    b.getInstallStep().dependOn(preflight);
+
     // A Zig module for every declared module, and a compile step only for the
     // ones that become a real artifact. An `import` dependency is merged into
     // its dependents as a module, so it needs no artifact and no link step.
@@ -478,6 +594,7 @@ pub fn build(b: *std.Build) void {
             }),
             .module => unreachable,
         };
+        step.step.dependOn(preflight);
         for (m.pre, 0..) |cmd, idx| {
             const pre = addCommand(b, m.name, "pre", idx, cmd);
             step.step.dependOn(pre);

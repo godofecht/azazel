@@ -5,6 +5,13 @@ toolchain: zig: {
 	preferred: "0.15"
 }
 
+// Host requirements for this repository. `zig build` checks them before any
+// artifact compiles, and `azazel doctor` checks them without building.
+system_deps: [
+	{name: "python3", kind: "tool", hint: "gen_build_spec.sh renders build_spec.zig with python3"},
+	{name: "cue", kind: "tool", hint: "https://cuelang.org/docs/install/"},
+]
+
 core: #Module & {
 	kind: "module"
 	root: "src/core.zig"

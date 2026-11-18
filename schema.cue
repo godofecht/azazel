@@ -158,6 +158,33 @@ package build
 	}
 }
 
+// A host operating system name, spelled the way Zig spells `std.Target.Os.Tag`.
+#Os: "linux" | "macos" | "windows" | "freebsd" | "netbsd" | "openbsd"
+
+// Something the machine must provide before the build can run.
+//
+//   tool         a program on PATH, such as `wayland-scanner`
+//   pkg_config   a library known to pkg-config, probed with `--exists`
+//   library      a system library the linker must find, probed with `-l<name>`
+//   framework    an Apple framework, probed with `-framework <name>`
+//   header       a C header, probed with `#include <name>`
+//   include_dir  a directory that must exist; it is also searched by header probes
+//
+// `os` limits the requirement to those operating systems. A tool is matched
+// against the host, everything else against the build target. An empty list
+// means every platform.
+#SystemDep: {
+	name: string & !=""
+	kind: "tool" | "pkg_config" | "library" | "framework" | "header" | "include_dir"
+	os: [...#Os] | *[]
+
+	// pkg_config only: passed as `--atleast-version`.
+	min_version?: string
+
+	// Shown when the requirement is missing, e.g. an install command.
+	hint: string | *""
+}
+
 #Profiles: {
 	debug: {
 		optimize: "Debug"
@@ -180,3 +207,4 @@ profiles: #Profiles
 toolchain: #Toolchain | *{}
 packages: [string]: #Package | *{}
 options: [...#Option] | *[]
+system_deps: [...#SystemDep] | *[]
