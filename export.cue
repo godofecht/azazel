@@ -13,6 +13,7 @@ _toolchain: toolchain
 _packages: packages
 _options: options
 _system_deps: system_deps
+_generated: generated
 
 build: modules: {
 	for k, v in _modules {
@@ -33,6 +34,7 @@ build: modules: {
 			build_options: v.build_options
 			option_values: v.option_values
 			gen_imports: v.gen_imports
+			generated: v.generated
 			build_options_import: v.build_options_import
 			native: v.native
 			optimize: profiles[v.profile].optimize
@@ -44,3 +46,4 @@ build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
 build: system_deps: _system_deps
+build: generated: _generated

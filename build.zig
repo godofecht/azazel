@@ -203,6 +203,91 @@ fn generatedModule(b: *std.Build, gen: spec.GeneratedImport) *std.Build.Module {
     });
 }
 
+const GeneratedPaths = std.StringHashMap(std.Build.LazyPath);
+
+fn generatedKey(b: *std.Build, step_name: []const u8, output: []const u8) []const u8 {
+    return b.fmt("{s}\n{s}", .{ step_name, output });
+}
+
+fn captureStdOut(run: *std.Build.Step.Run, basename: []const u8) std.Build.LazyPath {
+    // Zig 0.16 takes an options struct and can name the captured file. Earlier
+    // lanes take no argument and always name it `stdout`.
+    const params = @typeInfo(@TypeOf(std.Build.Step.Run.captureStdOut)).@"fn".params;
+    if (params.len == 2) return run.captureStdOut(.{ .basename = basename });
+    return run.captureStdOut();
+}
+
+/// Turn every `generated` declaration into build steps and record the path of
+/// each output. Outputs are LazyPaths, so a module that consumes one waits for
+/// the generator, and the generator reruns when its inputs change.
+fn addGenerated(b: *std.Build, target: std.Build.ResolvedTarget, paths: *GeneratedPaths) void {
+    const all = b.step("generate", "Produce every generated file declared in project.cue");
+
+    for (spec.generated) |gen| {
+        switch (gen.producer) {
+            .package => {
+                const dep = dependencyForImport(b, gen.package.?, target, gen.package_optimize);
+                const path = dep.namedLazyPath(gen.named_path.?);
+                paths.put(generatedKey(b, gen.name, gen.outputs[0].name), path) catch @panic("OOM");
+            },
+            .tool, .command => {
+                const run = if (gen.producer == .tool) blk: {
+                    // The tool runs during the build, so it compiles for the host.
+                    const tool = b.addExecutable(.{
+                        .name = gen.tool_name.?,
+                        .root_module = b.createModule(.{
+                            .root_source_file = b.path(gen.tool_root.?),
+                            .target = b.graph.host,
+                        }),
+                    });
+                    break :blk b.addRunArtifact(tool);
+                } else b.addSystemCommand(gen.command);
+                run.setName(b.fmt("generate {s}", .{gen.name}));
+
+                for (gen.args) |arg| {
+                    if (std.mem.eql(u8, arg.kind, "literal")) {
+                        run.addArg(arg.value);
+                    } else if (std.mem.eql(u8, arg.kind, "input_file")) {
+                        run.addFileArg(b.path(arg.value));
+                    } else if (std.mem.eql(u8, arg.kind, "output_file")) {
+                        const path = run.addOutputFileArg(arg.value);
+                        paths.put(generatedKey(b, gen.name, arg.value), path) catch @panic("OOM");
+                    } else {
+                        @panic("unsupported generated arg kind");
+                    }
+                }
+                if (gen.stdin) |file| run.setStdIn(.{ .lazy_path = b.path(file) });
+                if (gen.stdout) |name| {
+                    paths.put(generatedKey(b, gen.name, name), captureStdOut(run, name)) catch @panic("OOM");
+                }
+            },
+        }
+
+        for (gen.outputs) |output| {
+            const path = paths.get(generatedKey(b, gen.name, output.name)) orelse
+                @panic("generated output is declared but nothing produces it");
+            path.addStepDependencies(all);
+            if (output.install) |dest| {
+                const install = b.addInstallFile(path, dest);
+                b.getInstallStep().dependOn(&install.step);
+            }
+        }
+    }
+}
+
+fn applyGenerated(b: *std.Build, mod: *std.Build.Module, uses: []const spec.GeneratedUse, paths: *const GeneratedPaths) void {
+    for (uses) |use| {
+        const path = paths.get(generatedKey(b, use.from, use.output)) orelse
+            @panic("module consumes a generated output that is not declared");
+        switch (use.as) {
+            .import => mod.addImport(use.alias, b.createModule(.{ .root_source_file = path })),
+            .embed => mod.addAnonymousImport(use.alias, .{ .root_source_file = path }),
+            .c_source => mod.addCSourceFile(.{ .file = path, .flags = &.{} }),
+            .include => mod.addIncludePath(path.dirname()),
+        }
+    }
+}
+
 fn applyNative(b: *std.Build, mod: *std.Build.Module, native: spec.Native) void {
     if (native.link_libc) mod.link_libc = true;
     if (native.link_libcpp) mod.link_libcpp = true;
@@ -531,6 +616,10 @@ pub fn build(b: *std.Build) void {
     defer modules.deinit();
     defer steps.deinit();
 
+    var generated = GeneratedPaths.init(b.allocator);
+    defer generated.deinit();
+    addGenerated(b, target, &generated);
+
     for (spec.modules) |m| {
         // Zig 0.15 takes target and optimize on the module rather than on the
         // compile step, and folds addStaticLibrary/addSharedLibrary into
@@ -560,6 +649,7 @@ pub fn build(b: *std.Build) void {
         for (m.gen_imports) |gen| {
             mod.addImport(gen.alias, generatedModule(b, gen));
         }
+        applyGenerated(b, mod, m.generated, &generated);
     }
 
     for (spec.modules) |m| {

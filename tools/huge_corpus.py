@@ -102,6 +102,9 @@ class Repo:
     expected_executable_parity_classification: str = "not-modeled"
     executable_parity_targets: tuple[str, ...] = ()
     executable_parity_install_checks: tuple[str, ...] = ()
+    # Files the slice declares under `generated` with an install path. Each
+    # must exist and be non-empty after the slice builds.
+    executable_parity_generated_outputs: tuple[str, ...] = ()
     # The toolchain the project itself requires. When unset, `build_zig` is
     # read as one exact release. This is separate from the Azazel generator
     # lanes written into the overlay project.cue.
@@ -147,6 +150,7 @@ class Repo:
             "expected_executable_parity_classification": self.expected_executable_parity_classification,
             "executable_parity_targets": list(self.executable_parity_targets),
             "executable_parity_install_checks": list(self.executable_parity_install_checks),
+            "executable_parity_generated_outputs": list(self.executable_parity_generated_outputs),
         }
 
 
@@ -276,11 +280,21 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-api-drift",
         ("lib:vaxis", "example matrix", "installable demos", "tests"),
-        replacement_gaps=("generated Unicode tables", "example matrix target selection", "installable demos"),
+        replacement_gaps=("example matrix target selection", "installable demos", "test steps"),
         executable_parity_status="ready",
-        executable_parity_command=("zig", "build", "--summary", "all"),
-        expected_executable_parity_classification="zig-api-drift",
-        executable_parity_targets=("module:vaxis", "exe:vaxis_probe", "package:zigimg", "package:uucode"),
+        executable_parity_command=("zig", "build", "--prefix", ".azazel-install", "--summary", "all"),
+        expected_executable_parity_classification="ok",
+        executable_parity_targets=(
+            "module:vaxis",
+            "exe:vaxis_probe",
+            "package:zigimg",
+            "package:uucode",
+            "package-option:uucode:fields",
+            "generated:unicode_tables:tables.zig",
+        ),
+        executable_parity_generated_outputs=(
+            ".azazel-install/share/vaxis/unicode_tables.zig",
+        ),
     ),
     Repo(
         "capy",
@@ -503,6 +517,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                         "expected_classification": repo.expected_executable_parity_classification,
                         "targets": list(repo.executable_parity_targets),
                         "install_checks": list(repo.executable_parity_install_checks),
+                        "generated_outputs": list(repo.executable_parity_generated_outputs),
                         "workdir": ".azazel/parity-work",
                     },
                 },
@@ -597,47 +612,7 @@ xev_probe: #Module & {
 """,
             encoding="utf-8",
         )
-        (workspace / "export.cue").write_text(
-            """package build
-
-_modules: {
-    "xev": xev
-    "xev_probe": xev_probe
-}
-
-_toolchain: toolchain
-_packages: packages
-_options: options
-_system_deps: system_deps
-
-build: modules: {
-    for k, v in _modules {
-        (k): {
-            kind: v.kind
-            root: v.root
-            deps: v.deps
-            link: v.link
-            pre: v.pre
-            post: v.post
-            install_dirs: v.install_dirs
-            pkg_library_paths: v.pkg_library_paths
-            pkg_imports: v.pkg_imports
-            pkg_artifacts: v.pkg_artifacts
-            build_options: v.build_options
-            build_options_import: v.build_options_import
-            native: v.native
-            optimize: profiles[v.profile].optimize
-        }
-    }
-}
-
-build: toolchain: _toolchain
-build: packages: _packages
-build: options: _options
-build: system_deps: _system_deps
-""",
-            encoding="utf-8",
-        )
+        write_standard_export(workspace, ("xev", "xev_probe"))
         (src_dir / "xev_probe.zig").write_text(
             """const xev = @import("xev");
 
@@ -682,8 +657,24 @@ vaxis: #Module & {
             alias: "uucode"
             package: "uucode"
             module: "uucode"
+            fields: _unicode_fields
         },
     ]
+}
+
+// The Unicode property tables upstream asks uucode to build.
+_unicode_fields: ["east_asian_width", "grapheme_break", "general_category", "is_emoji_presentation"]
+
+// uucode compiles and runs `uucode_generate`, then exports the tables it wrote
+// as the named path "tables.zig". Declaring it here makes that run-artifact
+// output a tracked file of this slice: it is installed, and the probe embeds it.
+generated: unicode_tables: {
+    package: {
+        package: "uucode"
+        named_path: "tables.zig"
+        fields: _unicode_fields
+    }
+    outputs: [{name: "tables.zig", install: "share/vaxis/unicode_tables.zig"}]
 }
 
 vaxis_probe: #Module & {
@@ -691,6 +682,7 @@ vaxis_probe: #Module & {
     root: "src/vaxis_probe.zig"
     deps: ["vaxis"]
     link: "import"
+    generated: [{from: "unicode_tables", output: "tables.zig", as: "embed", alias: "unicode_tables"}]
 }
 """,
             encoding="utf-8",
@@ -707,10 +699,13 @@ vaxis_probe: #Module & {
         (src_dir / "vaxis_probe.zig").write_text(
             """const vaxis = @import("vaxis");
 
+const unicode_tables = @embedFile("unicode_tables");
+
 pub fn main() void {
     _ = vaxis.Vaxis;
     _ = vaxis.Key;
     _ = vaxis.zigimg.Image;
+    if (unicode_tables.len == 0) @panic("generated Unicode tables are empty");
 }
 """,
             encoding="utf-8",
@@ -899,6 +894,7 @@ _toolchain: toolchain
 _packages: packages
 _options: options
 _system_deps: system_deps
+_generated: generated
 
 build: modules: {
     for k, v in _modules {
@@ -913,6 +909,7 @@ build: modules: {
             pkg_library_paths: v.pkg_library_paths
             pkg_imports: v.pkg_imports
             pkg_artifacts: v.pkg_artifacts
+            generated: v.generated
             build_options: v.build_options
             build_options_import: v.build_options_import
             native: v.native
@@ -925,6 +922,7 @@ build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
 build: system_deps: _system_deps
+build: generated: _generated
 """,
         encoding="utf-8",
     )
@@ -1570,6 +1568,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                     "expected_classification": repo.expected_executable_parity_classification,
                     "targets": list(repo.executable_parity_targets),
                     "install_checks": list(repo.executable_parity_install_checks),
+                    "generated_outputs": list(repo.executable_parity_generated_outputs),
                     "workdir": ".azazel/parity-work",
                 },
             },
@@ -1584,6 +1583,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
             "expected_classification": repo.expected_executable_parity_classification,
             "targets": list(repo.executable_parity_targets),
             "install_checks": list(repo.executable_parity_install_checks),
+            "generated_outputs": list(repo.executable_parity_generated_outputs),
             "workdir": ".azazel/parity-work",
         },
     )
@@ -1593,6 +1593,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
     executable["expected_classification"] = repo.expected_executable_parity_classification
     executable["targets"] = list(repo.executable_parity_targets)
     executable["install_checks"] = list(repo.executable_parity_install_checks)
+    executable["generated_outputs"] = list(repo.executable_parity_generated_outputs)
     return manifest
 
 
@@ -1632,99 +1633,143 @@ def parity(root: Path, repos: list[Repo]) -> None:
             },
             "parity": parity_state,
         }
+        if repo.executable_parity_generated_outputs:
+            # A slice that declares generated outputs is validated here: it is
+            # built, and each declared file must exist afterwards.
+            slice_entry = executable_parity_entry(root, repo, path)
+            entry["generated_outputs"] = {
+                "declared": slice_entry["generated_outputs"],
+                "validated": slice_entry["generated_outputs_validated"],
+                "missing": slice_entry["missing_generated_outputs"],
+                "classification": slice_entry["classification"],
+                "expected_classification": slice_entry["expected_classification"],
+                "command": slice_entry["command"],
+                "output": slice_entry["output"],
+            }
         report.append(entry)
         print(
             f"{repo.name}: baseline {classification} "
             f"(expected {expected}) -> parity {parity_state}"
         )
+        if "generated_outputs" in entry:
+            generated = entry["generated_outputs"]
+            state = "validated" if generated["validated"] else f"not validated ({generated['classification']})"
+            print(f"  generated outputs {state}: {', '.join(generated['declared'])}")
     (root / "parity-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
+def executable_parity_entry(root: Path, repo: Repo, path: Path) -> dict[str, object]:
+    """Build one repo's Azazel target slice and check what it must produce."""
+    write_executable_parity_workspace(path, repo)
+    materialize_executable_parity_deps(path, repo)
+    manifest = load_parity_manifest(path, repo)
+    azazel = manifest["azazel"]
+    executable = dict(azazel.get("executable_parity", {}))
+    status = str(executable.get("status", "not-modeled"))
+    expected = str(executable.get("expected_classification", "not-modeled"))
+    targets = list(executable.get("targets", []))
+    command = list(executable.get("command", []))
+    install_checks = list(executable.get("install_checks", []))
+    generated_outputs = list(executable.get("generated_outputs", []))
+    missing_generated: list[str] = []
+    workdir = path / str(executable.get("workdir", ".azazel/parity-work"))
+
+    if status != "ready":
+        classification = "not-modeled"
+        returncode = 0
+        output = f"no executable Azazel parity target is modeled for {repo.name}"
+    elif not workdir.exists():
+        classification = "missing-parity-workspace"
+        returncode = 127
+        output = f"missing Azazel parity workspace: {workdir}"
+    else:
+        gen = run(["./gen_build_spec.sh"], cwd=workdir, check=False)
+        if gen.returncode != 0:
+            classification = classify_failure(gen.stdout, gen.returncode)
+            returncode = gen.returncode
+            output = gen.stdout[-OUTPUT_TAIL_BYTES:]
+        else:
+            resolution = resolve_toolchain(repo)
+            zig = resolution.path
+            if not zig:
+                classification = resolution.status
+                returncode = 127
+                output = resolution.diagnostic
+            else:
+                # Remove stale results so a check cannot pass on an old file.
+                for check in install_checks + generated_outputs:
+                    stale = workdir / check
+                    if stale.is_file():
+                        stale.unlink()
+                resolved_command = command_with_zig(command, zig)
+                env = os.environ.copy()
+                safe_name = repo.name.replace("-", "_")
+                env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(root / f".zig-cache-exec-{safe_name}-{repo.build_zig}"))
+                env.setdefault("ZIG_LOCAL_CACHE_DIR", str(root / f".zig-cache-local-exec-{safe_name}-{repo.build_zig}"))
+                result = subprocess.run(
+                    resolved_command,
+                    cwd=workdir,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                classification = classify_failure(result.stdout, result.returncode)
+                returncode = result.returncode
+                output = (gen.stdout + result.stdout)[-OUTPUT_TAIL_BYTES:]
+                command = resolved_command
+                if returncode == 0 and install_checks:
+                    missing = [check for check in install_checks if not (workdir / check).exists()]
+                    if missing:
+                        classification = "missing-install-artifact"
+                        returncode = 1
+                        output = (
+                            output
+                            + "\nmissing executable parity install checks:\n"
+                            + "\n".join(missing)
+                        )[-OUTPUT_TAIL_BYTES:]
+                if returncode == 0 and generated_outputs:
+                    missing_generated = [
+                        check
+                        for check in generated_outputs
+                        if not (workdir / check).is_file() or (workdir / check).stat().st_size == 0
+                    ]
+                    if missing_generated:
+                        classification = "missing-generated-output"
+                        returncode = 1
+                        output = (
+                            output
+                            + "\nmissing or empty generated outputs:\n"
+                            + "\n".join(missing_generated)
+                        )[-OUTPUT_TAIL_BYTES:]
+
+    return {
+        "name": repo.name,
+        "status": status,
+        "targets": targets,
+        "install_checks": install_checks,
+        "generated_outputs": generated_outputs,
+        "generated_outputs_validated": bool(generated_outputs) and returncode == 0 and not missing_generated,
+        "missing_generated_outputs": missing_generated,
+        "workdir": str(workdir.relative_to(path)) if workdir.is_relative_to(path) else str(workdir),
+        "command": command,
+        "zig": repo.build_zig,
+        "returncode": returncode,
+        "classification": classification,
+        "expected_classification": expected,
+        "matches_expected": classification == expected,
+        "output": output,
+    }
 
 
 def executable_parity(root: Path, repos: list[Repo]) -> None:
     report = []
     for repo in repos:
         path = ensure_clone(root, repo)
-        write_executable_parity_workspace(path, repo)
-        materialize_executable_parity_deps(path, repo)
-        manifest = load_parity_manifest(path, repo)
-        azazel = manifest["azazel"]
-        executable = dict(azazel.get("executable_parity", {}))
-        status = str(executable.get("status", "not-modeled"))
-        expected = str(executable.get("expected_classification", "not-modeled"))
-        targets = list(executable.get("targets", []))
-        command = list(executable.get("command", []))
-        install_checks = list(executable.get("install_checks", []))
-        workdir = path / str(executable.get("workdir", ".azazel/parity-work"))
-
-        if status != "ready":
-            classification = "not-modeled"
-            returncode = 0
-            output = f"no executable Azazel parity target is modeled for {repo.name}"
-        elif not workdir.exists():
-            classification = "missing-parity-workspace"
-            returncode = 127
-            output = f"missing Azazel parity workspace: {workdir}"
-        else:
-            gen = run(["./gen_build_spec.sh"], cwd=workdir, check=False)
-            if gen.returncode != 0:
-                classification = classify_failure(gen.stdout, gen.returncode)
-                returncode = gen.returncode
-                output = gen.stdout[-OUTPUT_TAIL_BYTES:]
-            else:
-                resolution = resolve_toolchain(repo)
-                zig = resolution.path
-                if not zig:
-                    classification = resolution.status
-                    returncode = 127
-                    output = resolution.diagnostic
-                else:
-                    resolved_command = command_with_zig(command, zig)
-                    env = os.environ.copy()
-                    safe_name = repo.name.replace("-", "_")
-                    env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(root / f".zig-cache-exec-{safe_name}-{repo.build_zig}"))
-                    env.setdefault("ZIG_LOCAL_CACHE_DIR", str(root / f".zig-cache-local-exec-{safe_name}-{repo.build_zig}"))
-                    result = subprocess.run(
-                        resolved_command,
-                        cwd=workdir,
-                        env=env,
-                        text=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        check=False,
-                    )
-                    classification = classify_failure(result.stdout, result.returncode)
-                    returncode = result.returncode
-                    output = (gen.stdout + result.stdout)[-OUTPUT_TAIL_BYTES:]
-                    command = resolved_command
-                    if returncode == 0 and install_checks:
-                        missing = [check for check in install_checks if not (workdir / check).exists()]
-                        if missing:
-                            classification = "missing-install-artifact"
-                            returncode = 1
-                            output = (
-                                output
-                                + "\nmissing executable parity install checks:\n"
-                                + "\n".join(missing)
-                            )[-OUTPUT_TAIL_BYTES:]
-
-        matches = classification == expected
-        report.append(
-            {
-                "name": repo.name,
-                "status": status,
-                "targets": targets,
-                "install_checks": install_checks,
-                "workdir": str(workdir.relative_to(path)) if workdir.is_relative_to(path) else str(workdir),
-                "command": command,
-                "zig": repo.build_zig,
-                "returncode": returncode,
-                "classification": classification,
-                "expected_classification": expected,
-                "matches_expected": matches,
-                "output": output,
-            }
-        )
-        print(f"{repo.name}: executable parity {classification} (expected {expected})")
+        entry = executable_parity_entry(root, repo, path)
+        report.append(entry)
+        print(f"{repo.name}: executable parity {entry['classification']} (expected {entry['expected_classification']})")
     (root / "executable-parity-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 

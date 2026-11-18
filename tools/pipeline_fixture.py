@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import zlib
 from pathlib import Path
 
 AZAZEL_ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,7 @@ _toolchain: toolchain
 _packages: packages
 _options: options
 _system_deps: system_deps
+_generated: generated
 
 build: modules: {
 	for k, v in _modules {
@@ -43,6 +45,7 @@ build: modules: {
 			build_options: v.build_options
 			option_values: v.option_values
 			gen_imports: v.gen_imports
+			generated: v.generated
 			build_options_import: v.build_options_import
 			native: v.native
 			optimize: profiles[v.profile].optimize
@@ -54,7 +57,32 @@ build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
 build: system_deps: _system_deps
+build: generated: _generated
 """
+
+ZON_PATHS = ("build.zig", "build.zig.zon", "build_spec.zig", "compat.zig", "src")
+
+
+def zon_fingerprint(name: str, ident: int = 0x1234ABCD) -> str:
+    """A fingerprint Zig accepts for `name`: crc32 of the name over a nonzero id."""
+    return hex((zlib.crc32(name.encode()) << 32) | ident)
+
+
+def zon_text(name: str, dependencies: dict[str, dict[str, object]] | None = None, paths: tuple[str, ...] = ZON_PATHS) -> str:
+    lines = [".{", f"    .name = .{name},", '    .version = "0.0.0",', f"    .fingerprint = {zon_fingerprint(name)},"]
+    lines.append("    .dependencies = .{")
+    for dep_name, dep in (dependencies or {}).items():
+        lines.append(f"        .{dep_name} = .{{")
+        for field in ("path", "url", "hash"):
+            if field in dep:
+                lines.append(f'            .{field} = "{dep[field]}",')
+        if dep.get("lazy"):
+            lines.append("            .lazy = true,")
+        lines.append("        },")
+    lines.append("    },")
+    lines.append("    .paths = .{" + ", ".join(f'"{item}"' for item in paths) + "},")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
 
 
 def pipeline_available() -> bool:
@@ -98,6 +126,22 @@ class Project:
             stderr=subprocess.STDOUT,
             check=False,
         )
+
+    def add_package(self, name: str, build_zig: str, files: dict[str, str] | None = None) -> Path:
+        """Write a local Zig package under `deps/<name>` with its own build.zig."""
+        package = self.root / "deps" / name
+        package.mkdir(parents=True, exist_ok=True)
+        (package / "build.zig").write_text(build_zig, encoding="utf-8")
+        for relative, text in (files or {}).items():
+            target = package / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+        listed = ("build.zig", "build.zig.zon", *sorted({item.split("/")[0] for item in (files or {})}))
+        (package / "build.zig.zon").write_text(zon_text(name, paths=listed), encoding="utf-8")
+        return package
+
+    def write_zon(self, dependencies: dict[str, dict[str, object]], name: str = "azazel_fixture") -> None:
+        self.write("build.zig.zon", zon_text(name, dependencies))
 
     def gen(self) -> subprocess.CompletedProcess[str]:
         return self.run("sh", "gen_build_spec.sh")

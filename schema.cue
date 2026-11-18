@@ -101,6 +101,70 @@ package build
 	output:    string   // the output_file arg whose written file is the module root
 }
 
+// One file a generator produces.
+#GeneratedOutput: {
+	// For a `tool` or `command` generator this is the value of the
+	// `output_file` argument that names the file, or the `stdout` capture name.
+	// For a `package` generator it is a label for the exported path.
+	name: string & !=""
+
+	// Install the file under the prefix at this relative path, for example
+	// "share/man/man1/tool.1". Omit it for files only the build consumes.
+	install?: string
+}
+
+// A build step that produces files, declared once and consumed by any module.
+//
+// Exactly one producer is set:
+//
+//   tool     a Zig source file compiled for the host and run
+//   command  a program on PATH, such as `wayland-scanner` or `scdoc`
+//   package  a path a `build.zig.zon` dependency exports with
+//            `addNamedLazyPath`, such as the tables uucode generates
+//
+// `args` are passed in order. An `output_file` argument must match an entry in
+// `outputs`. `stdin` feeds a repo file to the generator, and `stdout` captures
+// what it prints as the named output.
+#Generated: {
+	tool?: {
+		root: string
+		name: string
+	}
+	command?: [string, ...string]
+	package?: {
+		package:    string
+		named_path: string
+		pass_target:   bool | *true
+		pass_optimize: bool | *true
+		backend?: string
+		fields: [...string] | *[]
+
+		// Must match the optimize mode of the module that imports the same
+		// package, so both resolve to one dependency instance.
+		optimize: "Debug" | "ReleaseFast" | "ReleaseSafe" | "ReleaseSmall" | *"Debug"
+	}
+
+	args: [...#GenArg] | *[]
+	stdin?:  string
+	stdout?: string
+	outputs: [#GeneratedOutput, ...#GeneratedOutput]
+}
+
+// How a module consumes one generated output.
+//
+//   import    a Zig module, reached with `@import("<alias>")`
+//   embed     any file, reached with `@embedFile("<alias>")`
+//   c_source  a C source file compiled into the module
+//   include   the output's directory is added to the C include path
+#GeneratedUse: {
+	from:   string
+	output: string
+	as:     "import" | "embed" | "c_source" | "include"
+
+	// Required for `import` and `embed`.
+	alias: string | *""
+}
+
 #Option: {
 	name: string
 	type: #OptionType
@@ -143,6 +207,7 @@ package build
 	build_options: [...string] | *[]
 	option_values: [...#OptionValue] | *[]
 	gen_imports: [...#GeneratedImport] | *[]
+	generated: [...#GeneratedUse] | *[]
 	build_options_import: string | *"build-options"
 	native: #Native | *{}
 
@@ -208,3 +273,4 @@ toolchain: #Toolchain | *{}
 packages: [string]: #Package | *{}
 options: [...#Option] | *[]
 system_deps: [...#SystemDep] | *[]
+generated: [string]: #Generated

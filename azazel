@@ -28,6 +28,7 @@ REQUIRED_MODULE_FIELDS = {
     "build_options",
     "option_values",
     "gen_imports",
+    "generated",
     "build_options_import",
     "native",
     "optimize",
@@ -77,6 +78,22 @@ def validate_graph(data: dict, root: Path) -> list[str]:
     if not isinstance(data.get("system_deps"), list):
         errors.append("build.system_deps is not exported; add `build: system_deps: _system_deps` to export.cue")
 
+    generated = data.get("generated")
+    if not isinstance(generated, dict):
+        errors.append("build.generated is not exported; add `build: generated: _generated` to export.cue")
+        generated = {}
+    for gen_name, gen in generated.items():
+        for key in ("root",):
+            tool = gen.get("tool")
+            if isinstance(tool, dict) and not (root / tool.get(key, "")).is_file():
+                errors.append(f"generated {gen_name!r} tool root does not exist: {tool.get(key)}")
+        for arg in gen.get("args", []):
+            if arg.get("kind") == "input_file" and not (root / arg.get("value", "")).exists():
+                errors.append(f"generated {gen_name!r} input file does not exist: {arg.get('value')}")
+        stdin = gen.get("stdin")
+        if stdin and not (root / stdin).is_file():
+            errors.append(f"generated {gen_name!r} stdin file does not exist: {stdin}")
+
     names = set(modules)
     graph: dict[str, list[str]] = {}
 
@@ -92,6 +109,16 @@ def validate_graph(data: dict, root: Path) -> list[str]:
         source = module.get("root")
         if isinstance(source, str) and not (root / source).is_file():
             errors.append(f"module {name!r} root does not exist: {source}")
+
+        for use in module.get("generated", []) or []:
+            source = generated.get(use.get("from"))
+            if source is None:
+                errors.append(f"module {name!r} consumes unknown generated step {use.get('from')!r}")
+            elif use.get("output") not in [out.get("name") for out in source.get("outputs", [])]:
+                errors.append(
+                    f"module {name!r} consumes {use.get('output')!r}, which generated step "
+                    f"{use.get('from')!r} does not declare in outputs"
+                )
 
         deps = module.get("deps", [])
         if not isinstance(deps, list):

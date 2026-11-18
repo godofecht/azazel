@@ -160,6 +160,11 @@ The first executable slices are:
 - `exe:vaxis_probe` imports the module through Azazel's `link: "import"` graph
 - `package:zigimg` and `package:uucode` are wired through local `build.zig.zon`
   path dependencies in the parity workspace
+- `package-option:uucode:fields` passes the four Unicode property fields
+  upstream requests, so uucode's `uucode_generate` tool builds the tables
+- `generated:unicode_tables:tables.zig` declares the file that tool writes as a
+  tracked output: the slice installs it to `share/vaxis/unicode_tables.zig` and
+  the probe embeds it
 - `module:zig_gamedev_vectormath` points at upstream
   `samples/common/src/vectormath.zig`
 - `exe:zig_gamedev_vectormath_probe` imports the module through Azazel's
@@ -188,8 +193,47 @@ The first executable slices are:
 
 This proves an Azazel target slice can execute against upstream source. It does
 not claim full project build replacement yet; library variants, generated
-pkg-config/manpage outputs, generated Unicode tables, benchmarks, examples, and
-artifact checks and full example selection remain tracked replacement gaps.
+pkg-config/manpage outputs, benchmarks, examples, and artifact checks and full
+example selection remain tracked replacement gaps.
+
+## Generated-Output Slices
+
+A slice can declare files a generator must produce. They are listed in the
+manifest under `executable_parity.generated_outputs`, as paths inside the
+parity workspace.
+
+```sh
+tools/huge_corpus.py --parity --repo libvaxis
+tools/huge_corpus.py --executable-parity --repo libvaxis
+```
+
+Both commands build the slice, then require each listed file to exist and be
+non-empty. Files left by an earlier run are removed first. A missing or empty
+file gives `missing-generated-output`. `--parity` reports the result under
+`generated_outputs` next to the baseline, with `validated`, `missing` and the
+slice classification. `--executable-parity` reports
+`generated_outputs_validated` and `missing_generated_outputs`.
+
+For libvaxis the generated file is uucode's Unicode table module. Upstream's
+`build.zig` asks uucode for four property fields; uucode compiles
+`uucode_generate`, runs it, and exports the result as the named path
+`tables.zig`. The slice declares that path:
+
+```cue
+generated: unicode_tables: {
+    package: {package: "uucode", named_path: "tables.zig", fields: _unicode_fields}
+    outputs: [{name: "tables.zig", install: "share/vaxis/unicode_tables.zig"}]
+}
+```
+
+```text
+$ tools/huge_corpus.py --parity --repo libvaxis
+libvaxis: baseline zig-api-drift (expected zig-api-drift) -> parity blocked
+  generated outputs validated: .azazel-install/share/vaxis/unicode_tables.zig
+```
+
+The baseline line is the host Zig running upstream's `build.zig --help`, which
+is unrelated to the slice. The slice itself ran on Zig `0.16.0`.
 
 ## Build Proof Reports
 
@@ -240,7 +284,7 @@ Current executable Azazel parity slices:
 | Project | Slice | Result | Boundary |
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
-| `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `zig-api-drift` on Zig `0.16.0` | Strict install-path parity now reaches `uucode`'s generated table builder and exposes the missing generated Unicode config surface; upstream still builds successfully. |
+| `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode`, `package-option:uucode:fields`, `generated:unicode_tables:tables.zig` | `ok` on Zig `0.16.0`, checked 2026-11-18 | The slice passes upstream's uucode `fields`, so `uucode_generate` runs. Its `tables.zig` output is declared under `generated`, installed, embedded by the probe, and checked on disk by the runner. Examples, tests and installable demos are still future work. |
 | `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `package:zgpu`, `artifact:zgpu:zdawn`, `package-library-path:dawn_aarch64_macos`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact and `zgpu`'s Dawn wrapper, package prebuilt library paths, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
 
 ## Stable Lanes and Project-Required Toolchains
@@ -386,7 +430,7 @@ command?" without cloning or compiling. Useful statuses:
 - Package dependencies: package module imports now exist, and executable corpus parity now covers local path dependencies; URL/hash fetch policy, lazy dependency options, and failure diagnostics still need richer modeling.
 - Named modules without artifacts: `kind: "module"` now represents `b.addModule` and pure module imports.
 - Build options: typed booleans, strings, and `u32` defaults now exist; enums/lists still need modeling.
-- Generated sources: pre-build command nodes now exist; `addRunArtifact` output-file tracking still needs modeling.
+- Generated sources: top-level `generated` steps track run-artifact, command and package outputs, and modules consume them as imports, embedded files, C sources or include paths. Generated directories and generators that import other modules are not modeled yet.
 - Native integration: C sources, include paths, link system libraries, pkg-config libraries, library paths, object files, frameworks, libc, and libc++ now exist.
 - Multi-step outputs: support install/run/test/doc/sign/package steps without hard-coding one global install flow.
 - Workspaces: support nested build packages and subprojects, especially MicroZig-style trees.
@@ -403,5 +447,5 @@ command?" without cloning or compiling. Useful statuses:
 
 1. Add enum/list build options.
 2. Add URL/hash package dependency declarations and dependency-fetch diagnostics beyond local path parity.
-3. Add generated-file/run-artifact output tracking.
+3. Extend generated-file tracking to output directories and to generators with their own imports.
 4. Expand executable Azazel parity from module/package probes to library artifacts, tests, examples, and additional repos.
