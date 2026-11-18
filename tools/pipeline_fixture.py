@@ -81,6 +81,12 @@ class Project:
 
     def run(self, *argv: str, path_prefix: Path | None = None) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
+        # Every fixture project shares one build.zig and differs only in the
+        # generated build_spec.zig. With a local cache shared between projects,
+        # as CI sets through ZIG_LOCAL_CACHE_DIR, Zig 0.15 and 0.16 reuse the
+        # first project's build runner for the next one. Keep the local cache
+        # inside the project.
+        env["ZIG_LOCAL_CACHE_DIR"] = str(self.root / ".zig-cache")
         if path_prefix is not None:
             env["PATH"] = f"{path_prefix}{os.pathsep}{env['PATH']}"
         return subprocess.run(
