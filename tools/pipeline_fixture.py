@@ -10,12 +10,13 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import zlib
 from pathlib import Path
 
 AZAZEL_ROOT = Path(__file__).resolve().parents[1]
-PIPELINE_FILES = ("azazel", "build.zig", "schema.cue", "gen_build_spec.sh", "compat.zig", "build_spec_test.zig")
+PIPELINE_FILES = ("build.zig", "schema.cue", "gen_build_spec.sh", "compat.zig", "build_spec_test.zig")
 
 EXPORT_CUE = """package build
 
@@ -142,6 +143,10 @@ class Project:
 
     def write_zon(self, dependencies: dict[str, dict[str, object]], name: str = "azazel_fixture") -> None:
         self.write("build.zig.zon", zon_text(name, dependencies))
+
+    def azazel(self, *args: str) -> subprocess.CompletedProcess[str]:
+        """Run the repository's `azazel` CLI with this project as the working directory."""
+        return self.run(sys.executable, str(AZAZEL_ROOT / "azazel"), *args)
 
     def gen(self) -> subprocess.CompletedProcess[str]:
         return self.run("sh", "gen_build_spec.sh")

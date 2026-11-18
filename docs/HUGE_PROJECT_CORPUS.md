@@ -196,6 +196,78 @@ not claim full project build replacement yet; library variants, generated
 pkg-config/manpage outputs, benchmarks, examples, and artifact checks and full
 example selection remain tracked replacement gaps.
 
+## Package Dependencies
+
+`tools/huge_corpus.py --dependencies` parses each repo's `build.zig.zon` and
+scans its `build.zig`, then writes `dependencies-results.json` in the clone
+root. `--prepare` writes the same data into `.azazel/corpus.json` and
+`.azazel/dependencies.json` on the integration branch. Nothing is built.
+
+Each dependency entry records:
+
+| Field | Meaning |
+| --- | --- |
+| `alias` | the name in `.dependencies`, which `b.dependency` uses |
+| `url`, `hash`, `path`, `lazy` | as written in the manifest |
+| `source` | `path`, `git`, `zip`, `tarball` or `archive`, from the url |
+| `hash_format` | `name-version`, `nameless`, `legacy-multihash` or `none` |
+| `package_name`, `package_version` | read out of a `name-version` hash; the name can differ from the alias |
+| `git_ref` | the commit or tag after `#` in a git url |
+| `manifest_lines` | first and last line of the entry in `build.zig.zon` |
+| `modules`, `artifacts`, `paths` | what `build.zig` takes from the dependency |
+| `import_aliases` | the names modules import it under |
+| `used_by_build_script`, `imported_by_build_script` | whether `build.zig` refers to it at all |
+
+The last three rows come from a text scan of `build.zig`. It follows the usual
+shapes and can miss a use that goes through a helper function.
+
+`nested_dependencies` lists what the repo's own path packages declare, at any
+depth. A workspace such as MicroZig keeps most of its fetched dependencies
+there. Each nested entry has the same fields plus `via`, the chain of aliases
+that leads to it, and `manifest`, the file that declares it. Packages fetched
+from the network are not opened, so their dependencies are not listed.
+
+A `legacy-multihash` hash (`1220...`) means the package was pinned before Zig
+0.14. Such a package usually still has a string `.name` and no `.fingerprint`
+in its own manifest, which newer Zig rejects. Capy's `zig-objc` is one.
+
+### Fetch failures and format failures
+
+`--build` separates two families and names the dependency for both.
+
+| Classification | Reasons |
+| --- | --- |
+| `dependency-fetch` | `connection`, `http-status`, `http-response`, `git-protocol`, `zip-temp-file`, `unpack`, `hash-mismatch` |
+| `dependency-format` | `legacy-name`, `missing-fingerprint`, `invalid-fingerprint`, `invalid-hash`, `missing-hash` |
+
+Zig reports most of these at a position in a `build.zig.zon`. A position in the
+repo's own manifest is mapped to the dependency on that line. A position inside
+a fetched package directory is mapped through the package hash. If the hash is
+not one of the repo's direct dependencies, the result is marked `transitive`.
+Each build result carries a `dependency_diagnosis` with the reason, the
+dependency, its url and hash, and one sentence of explanation.
+
+### Cache roots and fresh clone roots
+
+Every build result has a `cache_roots` object with the Zig global cache, the
+local cache and the package directory. Paths under the clone root are written
+as `<root>/...`. The stored build output and command get the same treatment,
+with the toolchain directory written as `<zig>`. The classification, the
+diagnosis, the dependency metadata and the cache roots are therefore identical
+for the same repo state from any `--root`.
+
+`--package-cache DIR`, or `AZAZEL_PACKAGE_CACHE`, points every build at one
+shared Zig global cache. A fresh `--root` then reuses packages that were
+already fetched. `cache_roots.shared_package_cache` records that it was used.
+
+### A slice that imports upstream's dependencies
+
+The libvaxis slice no longer clones zigimg and uucode by hand. It reads both
+entries from the fork's `build.zig.zon`, writes them into the slice's
+`project.cue` as `packages` with the same alias, url, hash and lazy flag, and
+writes the slice's `build.zig.zon` from that. Zig fetches the packages. uucode
+is lazy upstream, so the slice resolves it with `lazyDependency`.
+
 ## Generated-Output Slices
 
 A slice can declare files a generator must produce. They are listed in the
@@ -427,7 +499,7 @@ command?" without cloning or compiling. Useful statuses:
 ## Azazel Gaps Exposed
 
 - Toolchain constraints: lane support exists for `0.14`, `0.15`, and `0.16`; corpus manifests now declare exact, dev-window and custom toolchains. `project.cue` itself still declares lanes only.
-- Package dependencies: package module imports now exist, and executable corpus parity now covers local path dependencies; URL/hash fetch policy, lazy dependency options, and failure diagnostics still need richer modeling.
+- Package dependencies: package module imports exist, the libvaxis slice imports url and hash dependencies read from upstream's `build.zig.zon`, lazy packages resolve through `lazyDependency`, and `--build` names the dependency behind a fetch or format failure. Dependency build options are still a fixed set (`backend`, `fields`), and the manifests of fetched packages are not read before a build.
 - Named modules without artifacts: `kind: "module"` now represents `b.addModule` and pure module imports.
 - Build options: typed booleans, strings, and `u32` defaults now exist; enums/lists still need modeling.
 - Generated sources: top-level `generated` steps track run-artifact, command and package outputs, and modules consume them as imports, embedded files, C sources or include paths. Generated directories and generators that import other modules are not modeled yet.
@@ -446,6 +518,6 @@ command?" without cloning or compiling. Useful statuses:
 ## Next Targets
 
 1. Add enum/list build options.
-2. Add URL/hash package dependency declarations and dependency-fetch diagnostics beyond local path parity.
+2. Read the manifests of fetched packages so transitive dependencies are recorded before a build.
 3. Extend generated-file tracking to output directories and to generators with their own imports.
 4. Expand executable Azazel parity from module/package probes to library artifacts, tests, examples, and additional repos.

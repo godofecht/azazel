@@ -132,6 +132,10 @@ app: #Module & {
 
 The producer is a Zig host `tool`, a `command` on `PATH`, or a path exported by a `package`. Outputs can be imported, embedded, compiled as C sources, added to the include path, and installed. This repository builds `app` that way: it prints the version the generator read from `build.zig.zon`. See "Generated files" in [`docs/WIKI.md`](docs/WIKI.md).
 
+## Package dependencies
+
+`packages` in `project.cue` declares `build.zig.zon` dependencies by alias, with `url`, `hash`, `path` and `lazy`. Modules consume them through `pkg_imports`, `pkg_artifacts` and `pkg_library_paths`. `python3 azazel zon write` rewrites the `.dependencies` of `build.zig.zon` from that declaration, `azazel zon check` lists drift, and `azazel zon import <build.zig.zon>` prints a `packages` block for an existing manifest. See "Packages and build.zig.zon" in [`docs/WIKI.md`](docs/WIKI.md).
+
 ## System dependencies
 
 Host requirements are declared once, at the top level of `project.cue`:

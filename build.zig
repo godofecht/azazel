@@ -102,7 +102,7 @@ fn applyPackageLibraryPaths(
     for (paths) |path| {
         if (!targetOsMatches(path.os, target)) continue;
         if (!targetArchMatches(path.arch, target)) continue;
-        const dep = b.lazyDependency(path.package, .{}) orelse @panic("package library path dependency unavailable");
+        const dep = b.lazyDependency(path.package, .{}) orelse continue;
         step.root_module.addLibraryPath(dep.path(path.path));
     }
 }
@@ -226,8 +226,13 @@ fn addGenerated(b: *std.Build, target: std.Build.ResolvedTarget, paths: *Generat
     for (spec.generated) |gen| {
         switch (gen.producer) {
             .package => {
-                const dep = dependencyForImport(b, gen.package.?, target, gen.package_optimize);
-                const path = dep.namedLazyPath(gen.named_path.?);
+                // A lazy package is absent on the first configure pass. Stand in
+                // an empty file so the graph is complete; Zig discards this pass
+                // and configures again once the package is fetched.
+                const path = if (dependencyForImport(b, gen.package.?, target, gen.package_optimize)) |dep|
+                    dep.namedLazyPath(gen.named_path.?)
+                else
+                    b.addWriteFiles().add(gen.outputs[0].name, "");
                 paths.put(generatedKey(b, gen.name, gen.outputs[0].name), path) catch @panic("OOM");
             },
             .tool, .command => {
@@ -428,6 +433,23 @@ fn addSystemPreflight(b: *std.Build, target: std.Build.ResolvedTarget) *std.Buil
     return doctor;
 }
 
+fn packageIsLazy(name: []const u8) bool {
+    for (spec.packages) |pkg| {
+        if (std.mem.eql(u8, pkg.name, name)) return pkg.lazy;
+    }
+    return false;
+}
+
+/// Resolve a `build.zig.zon` dependency by the name declared in `packages`.
+///
+/// A package marked `lazy` goes through `lazyDependency`. That returns null
+/// until Zig has fetched it; Zig then fetches it and configures the build
+/// again, so callers skip the package on the first pass.
+fn packageDependency(b: *std.Build, package: []const u8, args: anytype) ?*std.Build.Dependency {
+    if (packageIsLazy(package)) return b.lazyDependency(package, args);
+    return b.dependency(package, args);
+}
+
 fn dependencyWithoutBackend(
     b: *std.Build,
     package: []const u8,
@@ -435,24 +457,24 @@ fn dependencyWithoutBackend(
     pass_optimize: bool,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     if (pass_target and pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .optimize = optimize,
         });
     }
     if (pass_target) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
         });
     }
     if (pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .optimize = optimize,
         });
     }
-    return b.dependency(package, .{});
+    return packageDependency(b, package, .{});
 }
 
 fn dependencyWithBackend(
@@ -463,27 +485,27 @@ fn dependencyWithBackend(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     comptime backend: anytype,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     if (pass_target and pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .optimize = optimize,
             .backend = backend,
         });
     }
     if (pass_target) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .backend = backend,
         });
     }
     if (pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .optimize = optimize,
             .backend = backend,
         });
     }
-    return b.dependency(package, .{
+    return packageDependency(b, package, .{
         .backend = backend,
     });
 }
@@ -496,7 +518,7 @@ fn dependencyWithOptions(
     backend: ?[]const u8,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     const backend_name = backend orelse return dependencyWithoutBackend(b, package, pass_target, pass_optimize, target, optimize);
 
     if (std.mem.eql(u8, backend_name, "no_backend")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .no_backend);
@@ -527,27 +549,27 @@ fn dependencyWithFields(
     fields: []const []const u8,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     if (pass_target and pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .optimize = optimize,
             .fields = fields,
         });
     }
     if (pass_target) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .fields = fields,
         });
     }
     if (pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .optimize = optimize,
             .fields = fields,
         });
     }
-    return b.dependency(package, .{
+    return packageDependency(b, package, .{
         .fields = fields,
     });
 }
@@ -557,7 +579,7 @@ fn dependencyForImport(
     pkg_import: spec.PackageImport,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     // A `fields` string-list option (e.g. uucode's Unicode property tables) is
     // passed alongside target/optimize. It is mutually exclusive with `backend`
     // in practice: no corpus dependency takes both.
@@ -588,7 +610,7 @@ fn dependencyForArtifact(
     pkg_artifact: spec.PackageArtifact,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     return dependencyWithOptions(
         b,
         pkg_artifact.package,
@@ -639,11 +661,11 @@ pub fn build(b: *std.Build) void {
     for (spec.modules) |m| {
         const mod = modules.get(m.name).?;
         for (m.pkg_imports) |pkg_import| {
-            const dep = dependencyForImport(b, pkg_import, target, m.optimize);
+            const dep = dependencyForImport(b, pkg_import, target, m.optimize) orelse continue;
             mod.addImport(pkg_import.alias, dep.module(pkg_import.module));
         }
         for (m.pkg_artifacts) |pkg_artifact| {
-            const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize);
+            const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize) orelse continue;
             mod.linkLibrary(dep.artifact(pkg_artifact.artifact));
         }
         for (m.gen_imports) |gen| {

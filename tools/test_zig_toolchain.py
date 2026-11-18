@@ -447,7 +447,9 @@ class CorpusManifests(unittest.TestCase):
         (self.root / "out" / "mach").mkdir(parents=True)
         entry = self.build("mach")
         self.assertEqual(entry["toolchain"]["status"], "found")
-        self.assertEqual(entry["command"][0], str(binary))
+        self.assertEqual(entry["toolchain"]["path"], str(binary))
+        # The stored command names the toolchain directory as <zig>.
+        self.assertEqual(entry["command"][0], "<zig>/zig")
         self.assertEqual(self.clones, ["mach"])
         # The fake binary cannot build, so the result is a build failure and
         # the toolchain is no longer the reported cause.

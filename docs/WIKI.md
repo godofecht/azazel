@@ -321,6 +321,58 @@ has no extension. Consume it with `embed` or `install` on those lanes.
 `gen_imports` on a module is the older, narrower form: one host tool whose
 output is imported by that module only.
 
+### Packages and build.zig.zon
+
+`packages` declares the project's `build.zig.zon` dependencies. The map name is
+the dependency alias: the name `build.zig.zon` uses and the name modules refer
+to in `pkg_imports`, `pkg_artifacts` and `pkg_library_paths`.
+
+```cue
+packages: {
+    zigimg: {
+        url:  "git+https://github.com/zigimg/zigimg#d695acd97c02e57bb151e8f659d1280f5cd6ca70"
+        hash: "zigimg-0.1.0-8_eo2oyaFwBZwJpmqPkCfVXWBrHcqbYwmrp1I6bTD3lI"
+    }
+    uucode: {
+        url:  "git+https://github.com/jacobsandlund/uucode#2826a37a4562284fdacd8fa029d49509cc9bffcd"
+        hash: "uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA"
+        lazy: true
+    }
+    local_helper: path: "vendor/helper"
+}
+
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    pkg_imports: [{alias: "img", package: "zigimg", module: "zigimg"}]
+}
+```
+
+`alias` in `pkg_imports` is the `@import` name inside the module. It can differ
+from both the package alias and the module name the package exports.
+
+A package marked `lazy` is resolved with `lazyDependency`. Zig fetches it on
+first use and configures the build a second time, so a lazy package costs
+nothing until a module needs it.
+
+`build.zig.zon` stays a real file that Zig reads. The CLI keeps its
+`.dependencies` in step with `packages`:
+
+```sh
+python3 azazel zon check                  # list every difference
+python3 azazel zon write                  # rewrite .dependencies from packages
+python3 azazel zon import path/to/build.zig.zon   # print a packages block for another manifest
+```
+
+`zon write` replaces only the `.dependencies` value. The name, version,
+fingerprint, paths and comments elsewhere in the file are left alone. `zon
+import` is the way in from an existing project: it reads the upstream manifest
+and prints the matching `packages` declaration.
+
+`azazel check` fails when a module names a package that `packages` does not
+declare, when a package has a url without a hash, and when `build.zig.zon`
+disagrees with `packages`.
+
 ### Options, packages, and generated modules
 
 Top-level options currently support bool, string, and `u32` values. Modules can

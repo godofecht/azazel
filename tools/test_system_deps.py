@@ -245,13 +245,13 @@ class ProjectPreflight(unittest.TestCase):
 
     def test_cli_doctor(self) -> None:
         ok = self.project('\t{name: "sh", kind: "tool"},\n')
-        result = ok.run(sys.executable, "azazel", "doctor")
+        result = ok.azazel("doctor")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("azazel: system dependencies satisfied (1 declared)", result.stdout)
         self.assertFalse((ok.root / "zig-out").exists(), "doctor must not build artifacts")
 
         bad = self.project('\t{name: "azazel-no-such-tool", kind: "tool"},\n')
-        result = bad.run(sys.executable, "azazel", "doctor")
+        result = bad.azazel("doctor")
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("missing system dependency: tool azazel-no-such-tool", result.stdout)
 
@@ -265,7 +265,7 @@ class ProjectPreflight(unittest.TestCase):
         project = self.project('\t{name: "sh", kind: "tool"},\n')
         export = (project.root / "export.cue").read_text().replace("build: system_deps: _system_deps\n", "")
         project.write("export.cue", export)
-        result = project.run(sys.executable, "azazel", "check")
+        result = project.azazel("check")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("build.system_deps is not exported", result.stdout)
 

@@ -130,6 +130,32 @@ test "app imports the generated build_info module" {
     try testing.expect(found);
 }
 
+fn packageDeclared(name: []const u8) bool {
+    for (spec.packages) |pkg| {
+        if (std.mem.eql(u8, pkg.name, name)) return true;
+    }
+    return false;
+}
+
+test "every package a module or generator uses is declared" {
+    // build.zig looks a package up by name to learn whether it is lazy.
+    for (spec.modules) |m| {
+        for (m.pkg_imports) |item| try testing.expect(packageDeclared(item.package));
+        for (m.pkg_artifacts) |item| try testing.expect(packageDeclared(item.package));
+        for (m.pkg_library_paths) |item| try testing.expect(packageDeclared(item.package));
+    }
+    for (spec.generated) |gen| {
+        if (gen.package) |pkg| try testing.expect(packageDeclared(pkg.package));
+    }
+    for (spec.packages, 0..) |pkg, i| {
+        for (spec.packages[i + 1 ..]) |other| {
+            try testing.expect(!std.mem.eql(u8, pkg.name, other.name));
+        }
+        // A fetched package is pinned by hash.
+        if (pkg.url != null) try testing.expect(pkg.hash != null);
+    }
+}
+
 test "build options are unique and typed" {
     for (spec.options, 0..) |a, i| {
         try testing.expect(a.name.len > 0);

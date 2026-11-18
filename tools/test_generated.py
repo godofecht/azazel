@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import huge_corpus  # noqa: E402
-from pipeline_fixture import Project, pipeline_available  # noqa: E402
+from pipeline_fixture import Project, pipeline_available, zon_text  # noqa: E402
 
 # A host tool that compiles on Zig 0.14, 0.15 and 0.16. It avoids std.fs and
 # argument helpers, which differ between those lanes, and writes
@@ -266,7 +266,7 @@ app: #Module & {
 }
 """
         )
-        result = project.run(sys.executable, "azazel", "check")
+        result = project.azazel("check")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("generated 'g' tool root does not exist: gen/missing.zig", result.stdout)
         self.assertIn("generated 'g' input file does not exist: gen/absent.txt", result.stdout)
@@ -287,6 +287,17 @@ class CorpusGeneratedSlice(unittest.TestCase):
         self.repo = huge_corpus.select_repos(["libvaxis"])[0]
         self.clone = self.root / "libvaxis"
         self.clone.mkdir()
+        # The slice reads its packages from the repo's own manifest.
+        (self.clone / "build.zig.zon").write_text(
+            zon_text(
+                "vaxis",
+                {
+                    "zigimg": {"url": "git+https://example.org/zigimg#abc", "hash": "zigimg-0.1.0-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+                    "uucode": {"url": "git+https://example.org/uucode#def", "hash": "uucode-0.2.0-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", "lazy": True},
+                },
+            ),
+            encoding="utf-8",
+        )
         self.saved_env = dict(os.environ)
         self.saved = (huge_corpus.materialize_executable_parity_deps, huge_corpus.ensure_clone)
         huge_corpus.materialize_executable_parity_deps = lambda path, repo: None
