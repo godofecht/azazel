@@ -252,7 +252,7 @@ class ProjectPreflight(unittest.TestCase):
 
         bad = self.project('\t{name: "azazel-no-such-tool", kind: "tool"},\n')
         result = bad.run(sys.executable, "azazel", "doctor")
-        self.assertNotEqual(result.returncode, 0)
+        self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("missing system dependency: tool azazel-no-such-tool", result.stdout)
 
     def test_schema_rejects_unknown_kind_and_os(self) -> None:
