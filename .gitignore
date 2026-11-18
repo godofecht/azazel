@@ -6,3 +6,4 @@ zig-cache/
 build_spec.zig
 tools/huge_corpus/audit-results.json
 .build_spec.stamp
+__pycache__/

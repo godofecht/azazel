@@ -122,6 +122,8 @@ The generated build spec records those lanes and `build.zig` rejects an unsuppor
 
 Release CI currently covers 0.14.1, 0.15.2, and 0.16.0. Zig 0.17 support exists for corpus work but remains best-effort while 0.17 is a moving development target.
 
+Lanes describe what the Azazel generator supports. The exact release, development-build window, or custom distribution an upstream project requires is a separate declaration, recorded per repo in the corpus manifests and resolved by `tools/zig_toolchain.py`. See [`docs/HUGE_PROJECT_CORPUS.md`](docs/HUGE_PROJECT_CORPUS.md).
+
 ## Import and ABI graphs
 
 Azazel distinguishes two internal dependency shapes.

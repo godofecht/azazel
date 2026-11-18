@@ -243,6 +243,76 @@ Current executable Azazel parity slices:
 | `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode` | `zig-api-drift` on Zig `0.16.0` | Strict install-path parity now reaches `uucode`'s generated table builder and exposes the missing generated Unicode config surface; upstream still builds successfully. |
 | `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `package:zgpu`, `artifact:zgpu:zdawn`, `package-library-path:dawn_aarch64_macos`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact and `zgpu`'s Dawn wrapper, package prebuilt library paths, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
 
+## Stable Lanes and Project-Required Toolchains
+
+Two different things are called a Zig version in this corpus.
+
+A stable lane is an Azazel property. `toolchain.zig.lanes` in `project.cue`
+lists the `std.Build` API lanes the Azazel generator supports for that project:
+`"0.14"`, `"0.15"`, `"0.16"`. The generated `build.zig` rejects any other lane.
+
+A project-required toolchain is an upstream property. It is the Zig build the
+project's own `build.zig` accepts. Each corpus manifest declares it under
+`toolchain`, apart from `preferred_zig` and the overlay `project.cue` lanes.
+There are three kinds:
+
+| Kind | Accepts | Corpus example |
+| --- | --- | --- |
+| `exact` | one release, compared against `zig version` | Capy and TigerBeetle on `0.14.1` |
+| `dev-window` | development builds from `min_version` (inclusive) up to `max_version` (exclusive) | ZLS: `>= 0.17.0-dev.292+fc1c83a36` and `< 0.17.0-dev.601+0ff175b69` |
+| `custom` | a named build of another distribution, plus the version its `zig version` prints | Mach: `2026.4.10-mach`, which reports `0.16.0-dev.3142+5ccfeb926` |
+
+The ZLS window comes from `minimum_zig_version` in its `build.zig.zon` and the
+upper bound its `build.zig` enforces. The Mach name comes from
+`mach_zig_version` in its `build.zig.zon`.
+
+`tools/zig_toolchain.py` resolves a requirement in this order:
+
+1. a configured path in `AZAZEL_ZIG_<ID>`, for example `AZAZEL_ZIG_017DEV` or
+   `AZAZEL_ZIG_MACH2026410`
+2. the local cache: every `*/zig` under `AZAZEL_TOOLCHAIN_ROOT`, then `~/zig`
+3. `zig-<id>`, `zig-<version>` and `zig` on `PATH`
+4. with `--fetch-toolchains` only: the official index at
+   `ziglang.org/download/index.json`, the Mach index at
+   `pkg.machengine.org/zig/index.json`, and known mirrors for official tarballs
+
+Every candidate is run with `zig version` and compared with the requirement. A
+configured path is checked the same way. A download is checked against the
+index `shasum` before it is unpacked into the toolchain root. Without
+`--fetch-toolchains` resolution stays offline.
+
+`--doctor`, `--build` and `--executable-parity` report one of these when the
+toolchain stops a run. The build is then never started and the repo is never
+cloned.
+
+| Classification | Meaning |
+| --- | --- |
+| `missing-toolchain` | No local binary satisfies the requirement. The diagnostic states the requirement and the override variable. |
+| `unsupported-toolchain` | A binary configured for this requirement, or one from the same lane, is too old or too new. The diagnostic names the binary, its version and the accepted range. |
+| `toolchain-fetch-failed` | `--fetch-toolchains` was given and no index or mirror could supply the build. The diagnostic lists each URL with its error. |
+
+Each result carries a `toolchain` object with the requirement, every candidate
+that was examined with its verdict, and every fetch attempt.
+
+Checked on 2026-11-18 from a host with Zig `0.14.0` and `0.14.1` installed:
+
+```text
+$ tools/huge_corpus.py --build --repo zls
+zls: build missing-toolchain (expected missing-toolchain)
+  toolchain: requires Zig >= 0.17.0-dev.292+fc1c83a36 and < 0.17.0-dev.601+0ff175b69 ...
+
+$ tools/huge_corpus.py --build --repo zls --fetch-toolchains
+zls: build toolchain-fetch-failed (expected missing-toolchain)
+  toolchain: ... fetch https://pkg.machengine.org/zig/index.json: no published build
+  satisfies the requirement: 0.17.0-dev.892+54537285c is too new, ...
+```
+
+No index publishes a build inside the ZLS window any more, so the fetch names
+the nearest builds and stops. With a too-new development build in the toolchain
+root the same command reports `unsupported-toolchain`. `--fetch-toolchains` was
+also used to install the official `0.16.0` release. The Mach download was not
+run on this host.
+
 ## Doctor Output
 
 `tools/huge_corpus.py --doctor` answers "can this host run the declared proof
@@ -250,7 +320,9 @@ command?" without cloning or compiling. Useful statuses:
 
 | Field | Meaning |
 | --- | --- |
-| `toolchain.found` | The declared Zig binary can be resolved from the local toolchain root or an override env var. |
+| `toolchain.found` | A local Zig binary satisfies the project-required toolchain. |
+| `toolchain.status` | `found`, `missing-toolchain`, `unsupported-toolchain`, or `toolchain-fetch-failed`. |
+| `toolchain.diagnostic` | The requirement, the binaries that were rejected and why, and how to supply one. |
 | `required_tools` | Host commands such as `pkg-config` or `wayland-scanner`. |
 | `pkg_config_libs` | Libraries probed through `pkg-config --exists`. |
 | `replacement_gaps` | Build-graph features Azazel/Zaza must model before claiming replacement value. |
@@ -275,7 +347,7 @@ command?" without cloning or compiling. Useful statuses:
 
 ## Azazel Gaps Exposed
 
-- Toolchain constraints: lane support now exists for `0.14`, `0.15`, and `0.16`; exact/custom toolchains still need richer metadata.
+- Toolchain constraints: lane support exists for `0.14`, `0.15`, and `0.16`; corpus manifests now declare exact, dev-window and custom toolchains. `project.cue` itself still declares lanes only.
 - Package dependencies: package module imports now exist, and executable corpus parity now covers local path dependencies; URL/hash fetch policy, lazy dependency options, and failure diagnostics still need richer modeling.
 - Named modules without artifacts: `kind: "module"` now represents `b.addModule` and pure module imports.
 - Build options: typed booleans, strings, and `u32` defaults now exist; enums/lists still need modeling.

@@ -24,6 +24,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import zig_toolchain
+from zig_toolchain import ToolchainSpec
+
 
 BRANCH = "azazel-zaza-integration"
 OUTPUT_TAIL_BYTES = 12000
@@ -54,6 +57,13 @@ class Repo:
     expected_executable_parity_classification: str = "not-modeled"
     executable_parity_targets: tuple[str, ...] = ()
     executable_parity_install_checks: tuple[str, ...] = ()
+    # The toolchain the project itself requires. When unset, `build_zig` is
+    # read as one exact release. This is separate from the Azazel generator
+    # lanes written into the overlay project.cue.
+    toolchain: ToolchainSpec | None = None
+
+    def required_toolchain(self) -> ToolchainSpec:
+        return self.toolchain or ToolchainSpec.exact(self.build_zig)
 
     def manifest(self) -> dict[str, object]:
         return {
@@ -66,6 +76,7 @@ class Repo:
             "preferred_zig": self.preferred_zig,
             "baseline_command": list(self.baseline_command),
             "build_zig": self.build_zig,
+            "toolchain": self.required_toolchain().manifest(),
             "build_command": list(self.build_command),
             "expected_build_classification": self.expected_build_classification,
             "azazel_command": list(self.azazel_command),
@@ -95,11 +106,18 @@ REPOS = [
         ("zig", "build", "--help"),
         "0.17-dev",
         ("zig", "build", "--summary", "all"),
-        "zig-toolchain",
+        "missing-toolchain",
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:zls", "tests", "generated version data"),
         replacement_gaps=("exact dev-toolchain window", "package dependencies", "generated version data"),
+        toolchain=ToolchainSpec(
+            id="0.17-dev",
+            kind="dev-window",
+            min_version="0.17.0-dev.292+fc1c83a36",
+            max_version="0.17.0-dev.601+0ff175b69",
+            source="build.zig.zon minimum_zig_version and the build.zig upper bound (ZLS issue 3208)",
+        ),
     ),
     Repo(
         "libxev",
@@ -152,6 +170,15 @@ REPOS = [
         "zig-toolchain",
         ("module:mach", "examples", "generated Vulkan bindings", "asset steps"),
         replacement_gaps=("custom Zig toolchain resolver", "generated Vulkan bindings", "asset pipeline"),
+        toolchain=ToolchainSpec(
+            id="mach-2026.4.10",
+            kind="custom",
+            distribution="mach",
+            name="2026.4.10-mach",
+            version="0.16.0-dev.3142+5ccfeb926",
+            index_url=zig_toolchain.MACH_INDEX,
+            source="build.zig.zon mach_zig_version",
+        ),
     ),
     Repo(
         "microzig",
@@ -301,36 +328,17 @@ def repo_dir(root: Path, repo: Repo) -> Path:
     return root / repo.name
 
 
-def toolchain_root() -> Path:
-    return Path(os.environ.get("AZAZEL_TOOLCHAIN_ROOT", Path(__file__).resolve().parents[2] / ".toolchains"))
+# Set by --fetch-toolchains. Resolution stays offline unless it is on.
+FETCH_TOOLCHAINS = False
+_RESOLUTIONS: dict[str, zig_toolchain.Resolution] = {}
 
 
-def zig_for(version: str) -> str:
-    env_key = "AZAZEL_ZIG_" + "".join(ch for ch in version.upper() if ch.isalnum())
-    if os.environ.get(env_key):
-        return os.environ[env_key]
-
-    known = {
-        "0.14.1": Path("/Users/abhishekshivakumar/zig/0.14.1/zig"),
-        "0.15.2": toolchain_root() / "zig-aarch64-macos-0.15.2" / "zig",
-        "0.16.0": toolchain_root() / "zig-aarch64-macos-0.16.0" / "zig",
-        "0.17-dev": toolchain_root() / "zig-aarch64-macos-0.17-dev" / "zig",
-        "mach-2026.4.10": toolchain_root() / "zig-mach-2026.4.10" / "zig",
-    }
-    candidate = known.get(version)
-    if candidate and candidate.exists():
-        return str(candidate)
-    if version == "0.17-dev":
-        matches = sorted(toolchain_root().glob("zig-aarch64-macos-0.17.0-dev.*/zig"))
-        if matches:
-            return str(matches[-1])
-
-    named = shutil.which(f"zig-{version}")
-    if named:
-        return named
-    if version == "host":
-        return shutil.which("zig") or "zig"
-    return ""
+def resolve_toolchain(repo: Repo) -> zig_toolchain.Resolution:
+    """Resolve the Zig toolchain a repo requires, once per run."""
+    spec = repo.required_toolchain()
+    if spec.id not in _RESOLUTIONS:
+        _RESOLUTIONS[spec.id] = zig_toolchain.resolve(spec, fetch=FETCH_TOOLCHAINS)
+    return _RESOLUTIONS[spec.id]
 
 
 def cue_preferred_lane(repo: Repo) -> str:
@@ -408,6 +416,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                 "build": {
                     "command": list(repo.build_command),
                     "zig": repo.build_zig,
+                    "toolchain": repo.required_toolchain().manifest(),
                     "expected_classification": repo.expected_build_classification,
                 },
                 "azazel": {
@@ -1234,7 +1243,8 @@ def pkg_config_available(name: str) -> bool:
 
 
 def doctor_entry(repo: Repo) -> dict[str, object]:
-    zig = zig_for(repo.build_zig)
+    resolution = resolve_toolchain(repo)
+    zig = resolution.path
     tools = [
         {
             "name": tool,
@@ -1254,17 +1264,14 @@ def doctor_entry(repo: Repo) -> dict[str, object]:
     missing = []
     if not zig:
         missing.append(f"zig:{repo.build_zig}")
+    blocked = resolution.status if not zig else "doctor-blocked"
     missing.extend(f"tool:{tool['name']}" for tool in tools if not tool["found"])
     missing.extend(f"pkg-config:{lib['name']}" for lib in pkg_config if not lib["found"])
     return {
         "name": repo.name,
         "ready": ready,
         "missing": missing,
-        "toolchain": {
-            "version": repo.build_zig,
-            "path": zig,
-            "found": bool(zig),
-        },
+        "toolchain": resolution.as_dict(),
         "required_tools": tools,
         "pkg_config_libs": pkg_config,
         "system_deps": list(repo.system_deps),
@@ -1272,8 +1279,8 @@ def doctor_entry(repo: Repo) -> dict[str, object]:
         "replacement_gaps": list(repo.replacement_gaps),
         "next_action": next_action(
             repo,
-            repo.expected_build_classification if ready else "doctor-blocked",
-            "",
+            repo.expected_build_classification if ready else blocked,
+            resolution.diagnostic,
         ),
     }
 
@@ -1284,6 +1291,8 @@ def doctor(root: Path, repos: list[Repo]) -> None:
         status = "ready" if entry["ready"] else "blocked"
         missing = ", ".join(entry["missing"]) if entry["missing"] else "none"
         print(f"{entry['name']}: doctor {status}; missing: {missing}")
+        if not entry["toolchain"]["found"]:
+            print(f"  toolchain: {entry['toolchain']['diagnostic']}")
     (root / "doctor-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1298,8 +1307,13 @@ def next_action(repo: Repo, classification: str, output: str) -> str:
         if repo.name == "zls":
             return "pin an accepted ZLS 0.17-dev build or track the ZLS toolchain window before parity work"
         return "resolve the project Zig lane before modeling build graph parity"
-    if classification == "missing-toolchain":
-        return f"install {repo.build_zig} or set AZAZEL_ZIG_{''.join(ch for ch in repo.build_zig.upper() if ch.isalnum())}"
+    if classification in (zig_toolchain.MISSING, zig_toolchain.UNSUPPORTED, zig_toolchain.FETCH_FAILED):
+        spec = repo.required_toolchain()
+        if classification == zig_toolchain.UNSUPPORTED:
+            return f"replace the local build with {spec.requirement()}, or set {spec.env_key}"
+        if classification == zig_toolchain.FETCH_FAILED:
+            return f"no index or mirror served {spec.requirement()}; install it by hand and set {spec.env_key}"
+        return f"install {spec.requirement()}, set {spec.env_key}, or rerun with --fetch-toolchains"
     if classification == "system-dependency":
         deps = ", ".join(repo.system_deps or repo.required_tools)
         return f"install host system dependencies, then rerun --doctor and --build: {deps}"
@@ -1319,14 +1333,17 @@ def next_action(repo: Repo, classification: str, output: str) -> str:
 def run_build(root: Path, repos: list[Repo]) -> None:
     report = []
     for repo in repos:
-        path = ensure_clone(root, repo)
-        zig = zig_for(repo.build_zig)
+        # Resolve the toolchain before cloning. A repo whose required Zig is
+        # absent is reported from the manifest alone.
+        resolution = resolve_toolchain(repo)
+        zig = resolution.path
         if not zig:
-            classification = "missing-toolchain"
-            output = f"no Zig binary found for {repo.build_zig}"
+            classification = resolution.status
+            output = resolution.diagnostic
             returncode = 127
             command = list(repo.build_command)
         else:
+            path = ensure_clone(root, repo)
             command = command_with_zig(list(repo.build_command), zig)
             env = os.environ.copy()
             safe_name = repo.name.replace("-", "_")
@@ -1349,6 +1366,7 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 "name": repo.name,
                 "command": command,
                 "zig": repo.build_zig,
+                "toolchain": resolution.as_dict(),
                 "returncode": returncode,
                 "classification": classification,
                 "expected_classification": repo.expected_build_classification,
@@ -1368,6 +1386,8 @@ def run_build(root: Path, repos: list[Repo]) -> None:
             f"{repo.name}: build {classification} "
             f"(expected {repo.expected_build_classification})"
         )
+        if not zig:
+            print(f"  toolchain: {resolution.diagnostic}")
     (root / "build-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1385,6 +1405,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
             "build": {
                 "command": list(repo.build_command),
                 "zig": repo.build_zig,
+                "toolchain": repo.required_toolchain().manifest(),
                 "expected_classification": repo.expected_build_classification,
             },
             "azazel": {
@@ -1503,11 +1524,12 @@ def executable_parity(root: Path, repos: list[Repo]) -> None:
                 returncode = gen.returncode
                 output = gen.stdout[-OUTPUT_TAIL_BYTES:]
             else:
-                zig = zig_for(repo.build_zig)
+                resolution = resolve_toolchain(repo)
+                zig = resolution.path
                 if not zig:
-                    classification = "missing-toolchain"
+                    classification = resolution.status
                     returncode = 127
-                    output = f"no Zig binary found for {repo.build_zig}"
+                    output = resolution.diagnostic
                 else:
                     resolved_command = command_with_zig(command, zig)
                     env = os.environ.copy()
@@ -1612,6 +1634,11 @@ def main() -> None:
     parser.add_argument("--doctor", action="store_true")
     parser.add_argument("--push", action="store_true")
     parser.add_argument(
+        "--fetch-toolchains",
+        action="store_true",
+        help="download a required Zig toolchain that is not installed, from its index or a known mirror",
+    )
+    parser.add_argument(
         "--refresh-base",
         action="store_true",
         help="recreate the integration branch from origin/main before writing the .azazel overlay",
@@ -1629,6 +1656,9 @@ def main() -> None:
         help="fail if the selected corpus size is not this count; useful before 10-repo batch runs",
     )
     args = parser.parse_args()
+
+    global FETCH_TOOLCHAINS
+    FETCH_TOOLCHAINS = args.fetch_toolchains
 
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
