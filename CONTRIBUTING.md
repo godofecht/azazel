@@ -20,6 +20,7 @@ python3 azazel gen
 diff -u /tmp/build_spec.first build_spec.zig
 python3 azazel build
 zig build test --summary all
+python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
 CI repeats the production path on Zig 0.14.1, 0.15.2, and 0.16.0. Changes to

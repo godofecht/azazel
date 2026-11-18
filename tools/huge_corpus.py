@@ -19,14 +19,64 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import corpus_deps
+import zig_toolchain
+import zon
+from zig_toolchain import ToolchainSpec
+
 
 BRANCH = "azazel-zaza-integration"
 OUTPUT_TAIL_BYTES = 12000
+
+
+SYSTEM_KINDS = ("tool", "pkg_config", "library", "framework", "header", "include_dir")
+
+
+@dataclass(frozen=True)
+class SystemRequirement:
+    """One thing the host must provide, in the shape of `#SystemDep` in schema.cue."""
+
+    name: str
+    kind: str
+    os: tuple[str, ...] = ()
+    min_version: str = ""
+    hint: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in SYSTEM_KINDS:
+            raise ValueError(f"system requirement {self.name!r}: unknown kind {self.kind!r}")
+
+    def manifest(self) -> dict[str, object]:
+        data: dict[str, object] = {"name": self.name, "kind": self.kind, "os": list(self.os)}
+        if self.min_version:
+            data["min_version"] = self.min_version
+        if self.hint:
+            data["hint"] = self.hint
+        return data
+
+    def cue(self) -> str:
+        fields = [f"name: {json.dumps(self.name)}", f"kind: {json.dumps(self.kind)}"]
+        if self.os:
+            fields.append("os: [" + ", ".join(json.dumps(item) for item in self.os) + "]")
+        if self.min_version:
+            fields.append(f"min_version: {json.dumps(self.min_version)}")
+        if self.hint:
+            fields.append(f"hint: {json.dumps(self.hint)}")
+        return "{" + ", ".join(fields) + "}"
+
+
+def tool(name: str, hint: str = "", os: tuple[str, ...] = ()) -> SystemRequirement:
+    return SystemRequirement(name, "tool", os, hint=hint)
+
+
+def pkg(name: str, hint: str = "", os: tuple[str, ...] = (), min_version: str = "") -> SystemRequirement:
+    return SystemRequirement(name, "pkg_config", os, min_version, hint)
 
 
 @dataclass(frozen=True)
@@ -44,9 +94,10 @@ class Repo:
     expected_classification: str
     first_targets: tuple[str, ...]
     system_deps: tuple[str, ...] = ()
-    required_tools: tuple[str, ...] = ()
-    pkg_config_libs: tuple[str, ...] = ()
     replacement_gaps: tuple[str, ...] = ()
+    # Typed host requirements. The overlay project.cue receives the same list
+    # as `system_deps`, so the corpus and an Azazel project share one shape.
+    requirements: tuple[SystemRequirement, ...] = ()
     integration_kind: str = "azazel"
     parity_status: str = "scaffold-only"
     executable_parity_status: str = "not-modeled"
@@ -54,6 +105,24 @@ class Repo:
     expected_executable_parity_classification: str = "not-modeled"
     executable_parity_targets: tuple[str, ...] = ()
     executable_parity_install_checks: tuple[str, ...] = ()
+    # Files the slice declares under `generated` with an install path. Each
+    # must exist and be non-empty after the slice builds.
+    executable_parity_generated_outputs: tuple[str, ...] = ()
+    # The toolchain the project itself requires. When unset, `build_zig` is
+    # read as one exact release. This is separate from the Azazel generator
+    # lanes written into the overlay project.cue.
+    toolchain: ToolchainSpec | None = None
+
+    @property
+    def required_tools(self) -> tuple[str, ...]:
+        return tuple(item.name for item in self.requirements if item.kind == "tool")
+
+    @property
+    def pkg_config_libs(self) -> tuple[str, ...]:
+        return tuple(item.name for item in self.requirements if item.kind == "pkg_config")
+
+    def required_toolchain(self) -> ToolchainSpec:
+        return self.toolchain or ToolchainSpec.exact(self.build_zig)
 
     def manifest(self) -> dict[str, object]:
         return {
@@ -66,6 +135,7 @@ class Repo:
             "preferred_zig": self.preferred_zig,
             "baseline_command": list(self.baseline_command),
             "build_zig": self.build_zig,
+            "toolchain": self.required_toolchain().manifest(),
             "build_command": list(self.build_command),
             "expected_build_classification": self.expected_build_classification,
             "azazel_command": list(self.azazel_command),
@@ -74,6 +144,7 @@ class Repo:
             "system_deps": list(self.system_deps),
             "required_tools": list(self.required_tools),
             "pkg_config_libs": list(self.pkg_config_libs),
+            "requirements": [item.manifest() for item in self.requirements],
             "replacement_gaps": list(self.replacement_gaps),
             "integration_kind": self.integration_kind,
             "parity_status": self.parity_status,
@@ -82,6 +153,7 @@ class Repo:
             "expected_executable_parity_classification": self.expected_executable_parity_classification,
             "executable_parity_targets": list(self.executable_parity_targets),
             "executable_parity_install_checks": list(self.executable_parity_install_checks),
+            "executable_parity_generated_outputs": list(self.executable_parity_generated_outputs),
         }
 
 
@@ -95,11 +167,18 @@ REPOS = [
         ("zig", "build", "--help"),
         "0.17-dev",
         ("zig", "build", "--summary", "all"),
-        "zig-toolchain",
+        "missing-toolchain",
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:zls", "tests", "generated version data"),
         replacement_gaps=("exact dev-toolchain window", "package dependencies", "generated version data"),
+        toolchain=ToolchainSpec(
+            id="0.17-dev",
+            kind="dev-window",
+            min_version="0.17.0-dev.292+fc1c83a36",
+            max_version="0.17.0-dev.601+0ff175b69",
+            source="build.zig.zon minimum_zig_version and the build.zig upper bound (ZLS issue 3208)",
+        ),
     ),
     Repo(
         "libxev",
@@ -115,6 +194,10 @@ REPOS = [
         "zig-api-drift",
         ("lib:xev", "examples", "benchmarks", "manpage generation"),
         replacement_gaps=("library variants", "generated pkg-config/manpage outputs", "test artifact checks"),
+        requirements=(
+            SystemRequirement("ws2_32", "library", ("windows",)),
+            SystemRequirement("mswsock", "library", ("windows",)),
+        ),
         executable_parity_status="ready",
         executable_parity_command=("zig", "build", "--summary", "all"),
         expected_executable_parity_classification="ok",
@@ -134,9 +217,19 @@ REPOS = [
         "zig-toolchain",
         ("exe:river", "generated protocol modules", "C/system link metadata"),
         ("pkg-config", "wayland", "wlroots", "libevdev", "xkbcommon", "pixman"),
-        ("pkg-config", "wayland-scanner"),
-        ("wayland-scanner",),
         ("system dependency preflight", "generated protocol modules", "pkg-config link metadata"),
+        requirements=(
+            tool("pkg-config"),
+            tool("wayland-scanner", "part of the wayland development package"),
+            pkg("wayland-scanner"),
+            pkg("wayland-protocols"),
+            pkg("wayland-server"),
+            pkg("wlroots-0.20"),
+            pkg("xkbcommon"),
+            pkg("pixman-1"),
+            pkg("libevdev"),
+            pkg("libinput"),
+        ),
     ),
     Repo(
         "mach",
@@ -152,6 +245,15 @@ REPOS = [
         "zig-toolchain",
         ("module:mach", "examples", "generated Vulkan bindings", "asset steps"),
         replacement_gaps=("custom Zig toolchain resolver", "generated Vulkan bindings", "asset pipeline"),
+        toolchain=ToolchainSpec(
+            id="mach-2026.4.10",
+            kind="custom",
+            distribution="mach",
+            name="2026.4.10-mach",
+            version="0.16.0-dev.3142+5ccfeb926",
+            index_url=zig_toolchain.MACH_INDEX,
+            source="build.zig.zon mach_zig_version",
+        ),
     ),
     Repo(
         "microzig",
@@ -181,11 +283,21 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-api-drift",
         ("lib:vaxis", "example matrix", "installable demos", "tests"),
-        replacement_gaps=("generated Unicode tables", "example matrix target selection", "installable demos"),
+        replacement_gaps=("example matrix target selection", "installable demos", "test steps"),
         executable_parity_status="ready",
-        executable_parity_command=("zig", "build", "--summary", "all"),
-        expected_executable_parity_classification="zig-api-drift",
-        executable_parity_targets=("module:vaxis", "exe:vaxis_probe", "package:zigimg", "package:uucode"),
+        executable_parity_command=("zig", "build", "--prefix", ".azazel-install", "--summary", "all"),
+        expected_executable_parity_classification="ok",
+        executable_parity_targets=(
+            "module:vaxis",
+            "exe:vaxis_probe",
+            "package:zigimg",
+            "package:uucode",
+            "package-option:uucode:fields",
+            "generated:unicode_tables:tables.zig",
+        ),
+        executable_parity_generated_outputs=(
+            ".azazel-install/share/vaxis/unicode_tables.zig",
+        ),
     ),
     Repo(
         "capy",
@@ -255,7 +367,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:tigerbeetle", "tests", "simulator", "release/package steps"),
-        required_tools=("git",),
+        requirements=(tool("git"),),
         replacement_gaps=(
             "large test matrix",
             "release/package artifact graph",
@@ -276,7 +388,7 @@ REPOS = [
         ("azazel", "parity", "--manifest", ".azazel/parity.json"),
         "zig-toolchain",
         ("exe:ghostty", "native/system deps", "resources", "macOS app bundle/package steps"),
-        required_tools=("pkg-config",),
+        requirements=(tool("pkg-config"),),
         replacement_gaps=(
             "native dependency preflight",
             "resource and app-bundle staging",
@@ -301,36 +413,17 @@ def repo_dir(root: Path, repo: Repo) -> Path:
     return root / repo.name
 
 
-def toolchain_root() -> Path:
-    return Path(os.environ.get("AZAZEL_TOOLCHAIN_ROOT", Path(__file__).resolve().parents[2] / ".toolchains"))
+# Set by --fetch-toolchains. Resolution stays offline unless it is on.
+FETCH_TOOLCHAINS = False
+_RESOLUTIONS: dict[str, zig_toolchain.Resolution] = {}
 
 
-def zig_for(version: str) -> str:
-    env_key = "AZAZEL_ZIG_" + "".join(ch for ch in version.upper() if ch.isalnum())
-    if os.environ.get(env_key):
-        return os.environ[env_key]
-
-    known = {
-        "0.14.1": Path("/Users/abhishekshivakumar/zig/0.14.1/zig"),
-        "0.15.2": toolchain_root() / "zig-aarch64-macos-0.15.2" / "zig",
-        "0.16.0": toolchain_root() / "zig-aarch64-macos-0.16.0" / "zig",
-        "0.17-dev": toolchain_root() / "zig-aarch64-macos-0.17-dev" / "zig",
-        "mach-2026.4.10": toolchain_root() / "zig-mach-2026.4.10" / "zig",
-    }
-    candidate = known.get(version)
-    if candidate and candidate.exists():
-        return str(candidate)
-    if version == "0.17-dev":
-        matches = sorted(toolchain_root().glob("zig-aarch64-macos-0.17.0-dev.*/zig"))
-        if matches:
-            return str(matches[-1])
-
-    named = shutil.which(f"zig-{version}")
-    if named:
-        return named
-    if version == "host":
-        return shutil.which("zig") or "zig"
-    return ""
+def resolve_toolchain(repo: Repo) -> zig_toolchain.Resolution:
+    """Resolve the Zig toolchain a repo requires, once per run."""
+    spec = repo.required_toolchain()
+    if spec.id not in _RESOLUTIONS:
+        _RESOLUTIONS[spec.id] = zig_toolchain.resolve(spec, fetch=FETCH_TOOLCHAINS)
+    return _RESOLUTIONS[spec.id]
 
 
 def cue_preferred_lane(repo: Repo) -> str:
@@ -394,7 +487,12 @@ def write_overlay(path: Path, repo: Repo) -> None:
     overlay = path / ".azazel"
     overlay.mkdir(exist_ok=True)
     manifest = repo.manifest()
+    # Parsed from the repo's own build.zig.zon and build.zig, so the manifest
+    # explains each dependency without a reader opening the upstream scripts.
+    dependencies = corpus_deps.describe(path)
+    manifest["dependencies"] = dependencies
     (overlay / "corpus.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (overlay / "dependencies.json").write_text(json.dumps(dependencies, indent=2) + "\n", encoding="utf-8")
     (overlay / "parity.json").write_text(
         json.dumps(
             {
@@ -408,6 +506,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                 "build": {
                     "command": list(repo.build_command),
                     "zig": repo.build_zig,
+                    "toolchain": repo.required_toolchain().manifest(),
                     "expected_classification": repo.expected_build_classification,
                 },
                 "azazel": {
@@ -417,6 +516,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                     "system_deps": list(repo.system_deps),
                     "required_tools": list(repo.required_tools),
                     "pkg_config_libs": list(repo.pkg_config_libs),
+                    "requirements": [item.manifest() for item in repo.requirements],
                     "replacement_gaps": list(repo.replacement_gaps),
                     "integration_kind": repo.integration_kind,
                     "executable_parity": {
@@ -425,6 +525,7 @@ def write_overlay(path: Path, repo: Repo) -> None:
                         "expected_classification": repo.expected_executable_parity_classification,
                         "targets": list(repo.executable_parity_targets),
                         "install_checks": list(repo.executable_parity_install_checks),
+                        "generated_outputs": list(repo.executable_parity_generated_outputs),
                         "workdir": ".azazel/parity-work",
                     },
                 },
@@ -463,10 +564,21 @@ toolchain: zig: {
     preferred: "%s"
 }
 """
-        % cue_preferred_lane(repo),
+        % cue_preferred_lane(repo)
+        + system_deps_cue(repo),
         encoding="utf-8",
     )
     write_executable_parity_workspace(path, repo)
+
+
+def system_deps_cue(repo: Repo) -> str:
+    """The repo's host requirements as a `system_deps` declaration."""
+    if not repo.requirements:
+        return ""
+    lines = ["", "system_deps: ["]
+    lines.extend(f"    {item.cue()}," for item in repo.requirements)
+    lines.append("]")
+    return "\n".join(lines) + "\n"
 
 
 def write_executable_parity_workspace(path: Path, repo: Repo) -> None:
@@ -484,7 +596,7 @@ def write_executable_parity_workspace(path: Path, repo: Repo) -> None:
 
     src_dir = workspace / "src"
     src_dir.mkdir(exist_ok=True)
-    (workspace / ".gitignore").write_text("build_spec.zig\nzig-cache/\nzig-out/\n", encoding="utf-8")
+    (workspace / ".gitignore").write_text("build_spec.zig\nzig-cache/\nzig-out/\nzig-pkg/\n", encoding="utf-8")
     if repo.name == "libxev":
         (workspace / "project.cue").write_text(
             """package build
@@ -508,45 +620,7 @@ xev_probe: #Module & {
 """,
             encoding="utf-8",
         )
-        (workspace / "export.cue").write_text(
-            """package build
-
-_modules: {
-    "xev": xev
-    "xev_probe": xev_probe
-}
-
-_toolchain: toolchain
-_packages: packages
-_options: options
-
-build: modules: {
-    for k, v in _modules {
-        (k): {
-            kind: v.kind
-            root: v.root
-            deps: v.deps
-            link: v.link
-            pre: v.pre
-            post: v.post
-            install_dirs: v.install_dirs
-            pkg_library_paths: v.pkg_library_paths
-            pkg_imports: v.pkg_imports
-            pkg_artifacts: v.pkg_artifacts
-            build_options: v.build_options
-            build_options_import: v.build_options_import
-            native: v.native
-            optimize: profiles[v.profile].optimize
-        }
-    }
-}
-
-build: toolchain: _toolchain
-build: packages: _packages
-build: options: _options
-""",
-            encoding="utf-8",
-        )
+        write_standard_export(workspace, ("xev", "xev_probe"))
         (src_dir / "xev_probe.zig").write_text(
             """const xev = @import("xev");
 
@@ -560,6 +634,9 @@ pub fn main() void {
         return
 
     if repo.name == "libvaxis":
+        # The slice takes zigimg and uucode exactly as upstream pins them: the
+        # same aliases, urls, hashes and lazy flags, read from its build.zig.zon.
+        upstream = upstream_packages(path, ("zigimg", "uucode"))
         (workspace / "project.cue").write_text(
             """package build
 
@@ -568,16 +645,9 @@ toolchain: zig: {
     preferred: "0.16"
 }
 
-packages: {
-    zigimg: {
-        path: "../../zig-pkg/zigimg-0.1.0-8_eo2oyaFwBZwJpmqPkCfVXWBrHcqbYwmrp1I6bTD3lI"
-    }
-    uucode: {
-        path: "../../zig-pkg/uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA"
-        lazy: true
-    }
-}
-
+"""
+            + packages_cue(upstream)
+            + """
 vaxis: #Module & {
     kind: "module"
     root: "../../src/main.zig"
@@ -591,8 +661,24 @@ vaxis: #Module & {
             alias: "uucode"
             package: "uucode"
             module: "uucode"
+            fields: _unicode_fields
         },
     ]
+}
+
+// The Unicode property tables upstream asks uucode to build.
+_unicode_fields: ["east_asian_width", "grapheme_break", "general_category", "is_emoji_presentation"]
+
+// uucode compiles and runs `uucode_generate`, then exports the tables it wrote
+// as the named path "tables.zig". Declaring it here makes that run-artifact
+// output a tracked file of this slice: it is installed, and the probe embeds it.
+generated: unicode_tables: {
+    package: {
+        package: "uucode"
+        named_path: "tables.zig"
+        fields: _unicode_fields
+    }
+    outputs: [{name: "tables.zig", install: "share/vaxis/unicode_tables.zig"}]
 }
 
 vaxis_probe: #Module & {
@@ -600,6 +686,7 @@ vaxis_probe: #Module & {
     root: "src/vaxis_probe.zig"
     deps: ["vaxis"]
     link: "import"
+    generated: [{from: "unicode_tables", output: "tables.zig", as: "embed", alias: "unicode_tables"}]
 }
 """,
             encoding="utf-8",
@@ -608,18 +695,18 @@ vaxis_probe: #Module & {
         write_workspace_zon(
             workspace,
             ".vaxis_azazel_parity",
-            {
-                "zigimg": "../../zig-pkg/zigimg-0.1.0-8_eo2oyaFwBZwJpmqPkCfVXWBrHcqbYwmrp1I6bTD3lI",
-                "uucode": "../../zig-pkg/uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA",
-            },
+            {dep.alias: {"url": dep.url, "hash": dep.hash, "lazy": dep.lazy} for dep in upstream},
         )
         (src_dir / "vaxis_probe.zig").write_text(
             """const vaxis = @import("vaxis");
+
+const unicode_tables = @embedFile("unicode_tables");
 
 pub fn main() void {
     _ = vaxis.Vaxis;
     _ = vaxis.Key;
     _ = vaxis.zigimg.Image;
+    if (unicode_tables.len == 0) @panic("generated Unicode tables are empty");
 }
 """,
             encoding="utf-8",
@@ -794,6 +881,22 @@ pub fn main() void {
     raise SystemExit(f"repo {repo.name} declares executable parity but has no workspace writer")
 
 
+def upstream_packages(path: Path, aliases: tuple[str, ...]) -> list[zon.Dependency]:
+    """The named dependencies of the repo's own build.zig.zon, as upstream pins them."""
+    manifest = path / "build.zig.zon"
+    if not manifest.is_file():
+        raise SystemExit(f"{path}: no build.zig.zon to read package dependencies from")
+    found = {dep.alias: dep for dep in zon.read_dependencies(manifest.read_text(encoding="utf-8"))}
+    missing = [alias for alias in aliases if alias not in found]
+    if missing:
+        raise SystemExit(f"{manifest}: no dependency named {', '.join(missing)}")
+    return [found[alias] for alias in aliases]
+
+
+def packages_cue(deps: list[zon.Dependency]) -> str:
+    return zon.render_cue_packages(deps)
+
+
 def write_standard_export(workspace: Path, modules: tuple[str, ...]) -> None:
     module_lines = "".join(f'    "{name}": {name}\n' for name in modules)
     (workspace / "export.cue").write_text(
@@ -807,6 +910,8 @@ _modules: {
 _toolchain: toolchain
 _packages: packages
 _options: options
+_system_deps: system_deps
+_generated: generated
 
 build: modules: {
     for k, v in _modules {
@@ -821,6 +926,7 @@ build: modules: {
             pkg_library_paths: v.pkg_library_paths
             pkg_imports: v.pkg_imports
             pkg_artifacts: v.pkg_artifacts
+            generated: v.generated
             build_options: v.build_options
             build_options_import: v.build_options_import
             native: v.native
@@ -832,6 +938,8 @@ build: modules: {
 build: toolchain: _toolchain
 build: packages: _packages
 build: options: _options
+build: system_deps: _system_deps
+build: generated: _generated
 """,
         encoding="utf-8",
     )
@@ -850,23 +958,23 @@ def write_workspace_zon(
         f"    .fingerprint = {fingerprint},",
         "    .dependencies = .{",
     ]
-    for name, dep in deps.items():
-        lines.append(f"        .{name} = .{{")
-        if isinstance(dep, str):
-            lines.append(f'            .path = "{dep}",')
-        else:
-            if "path" in dep:
-                lines.append(f'            .path = "{dep["path"]}",')
-            if "url" in dep:
-                lines.append(f'            .url = "{dep["url"]}",')
-            if "hash" in dep:
-                lines.append(f'            .hash = "{dep["hash"]}",')
-            if dep.get("lazy", False):
-                lines.append("            .lazy = true,")
-        lines.append("        },")
+    rendered = zon.render_dependencies(
+        [
+            zon.Dependency(alias=name, path=dep)
+            if isinstance(dep, str)
+            else zon.Dependency(
+                alias=name,
+                url=str(dep.get("url", "")),
+                hash=str(dep.get("hash", "")),
+                path=str(dep.get("path", "")),
+                lazy=bool(dep.get("lazy", False)),
+            )
+            for name, dep in deps.items()
+        ]
+    )
+    lines[-1] = "    .dependencies = " + rendered + ","
     lines.extend(
         [
-            "    },",
             "    .paths = .{",
             '        "build.zig",',
             '        "build.zig.zon",',
@@ -935,19 +1043,8 @@ def materialize_executable_parity_deps(path: Path, repo: Repo) -> None:
         )
         return
 
-    if repo.name != "libvaxis":
-        return
-    pkg_root = path / "zig-pkg"
-    ensure_git_package(
-        pkg_root / "zigimg-0.1.0-8_eo2oyaFwBZwJpmqPkCfVXWBrHcqbYwmrp1I6bTD3lI",
-        "https://github.com/zigimg/zigimg.git",
-        "d695acd97c02e57bb151e8f659d1280f5cd6ca70",
-    )
-    ensure_git_package(
-        pkg_root / "uucode-0.2.0-ZZjBPlK5VADj7fdoq7G8LIHzD5o6FSkcBXXrRWr4jnrA",
-        "https://github.com/jacobsandlund/uucode.git",
-        "2826a37a4562284fdacd8fa029d49509cc9bffcd",
-    )
+    # libvaxis needs nothing here: its slice declares url and hash, and Zig
+    # fetches both packages itself.
 
 
 def select_repos(names: list[str]) -> list[Repo]:
@@ -1222,58 +1319,105 @@ def command_with_zig(command: list[str], zig: str) -> list[str]:
     return command
 
 
-def pkg_config_available(name: str) -> bool:
+def pkg_config_available(name: str, min_version: str = "") -> bool:
     if not shutil.which("pkg-config"):
         return False
+    command = ["pkg-config", "--exists"]
+    if min_version:
+        command.append(f"--atleast-version={min_version}")
     return subprocess.run(
-        ["pkg-config", "--exists", name],
+        command + [name],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
     ).returncode == 0
 
 
+def host_os() -> str:
+    return zig_toolchain.host_platform().split("-", 1)[1]
+
+
+def system_preflight(repo: Repo) -> dict[str, object]:
+    """Probe the repo's declared host requirements without building anything.
+
+    Tools and pkg-config libraries are probed here. The other kinds need a
+    compiler probe, which the generated build runs through `zig build doctor`;
+    they are recorded with `checked: false` and never counted as missing.
+    """
+    current_os = host_os()
+    results = []
+    for item in repo.requirements:
+        entry = item.manifest()
+        applies = not item.os or current_os in item.os
+        entry.update({"applies": applies, "checked": False, "found": None, "detail": ""})
+        if not applies:
+            entry["detail"] = f"not required on {current_os}"
+        elif item.kind == "tool":
+            path = shutil.which(item.name) or ""
+            entry.update({"checked": True, "found": bool(path), "detail": path or "not found on PATH"})
+        elif item.kind == "pkg_config":
+            found = pkg_config_available(item.name, item.min_version)
+            if found:
+                detail = "found by pkg-config"
+            elif not shutil.which("pkg-config"):
+                detail = "pkg-config is not on PATH"
+            else:
+                detail = "not known to pkg-config"
+            entry.update({"checked": True, "found": found, "detail": detail})
+        else:
+            entry["detail"] = "probed by zig build doctor in a generated build"
+        results.append(entry)
+    missing = [entry for entry in results if entry["checked"] and not entry["found"]]
+    lines = []
+    for entry in missing:
+        label = "pkg-config library" if entry["kind"] == "pkg_config" else entry["kind"]
+        line = f"missing declared system requirement: {label} {entry['name']} ({entry['detail']})"
+        if entry.get("hint"):
+            line += f"; {entry['hint']}"
+        lines.append(line)
+    return {
+        "ready": not missing,
+        "requirements": results,
+        "missing": [f"{'pkg-config' if entry['kind'] == 'pkg_config' else entry['kind']}:{entry['name']}" for entry in missing],
+        "diagnostic": "\n".join(lines),
+    }
+
+
 def doctor_entry(repo: Repo) -> dict[str, object]:
-    zig = zig_for(repo.build_zig)
+    resolution = resolve_toolchain(repo)
+    zig = resolution.path
+    preflight = system_preflight(repo)
     tools = [
-        {
-            "name": tool,
-            "path": shutil.which(tool) or "",
-            "found": shutil.which(tool) is not None,
-        }
-        for tool in repo.required_tools
+        {"name": entry["name"], "path": entry["detail"] if entry["found"] else "", "found": bool(entry["found"])}
+        for entry in preflight["requirements"]
+        if entry["kind"] == "tool" and entry["applies"]
     ]
     pkg_config = [
-        {
-            "name": lib,
-            "found": pkg_config_available(lib),
-        }
-        for lib in repo.pkg_config_libs
+        {"name": entry["name"], "found": bool(entry["found"])}
+        for entry in preflight["requirements"]
+        if entry["kind"] == "pkg_config" and entry["applies"]
     ]
-    ready = bool(zig) and all(tool["found"] for tool in tools) and all(lib["found"] for lib in pkg_config)
+    ready = bool(zig) and preflight["ready"]
     missing = []
     if not zig:
         missing.append(f"zig:{repo.build_zig}")
-    missing.extend(f"tool:{tool['name']}" for tool in tools if not tool["found"])
-    missing.extend(f"pkg-config:{lib['name']}" for lib in pkg_config if not lib["found"])
+    blocked = resolution.status if not zig else "doctor-blocked"
+    missing.extend(preflight["missing"])
     return {
         "name": repo.name,
         "ready": ready,
         "missing": missing,
-        "toolchain": {
-            "version": repo.build_zig,
-            "path": zig,
-            "found": bool(zig),
-        },
+        "toolchain": resolution.as_dict(),
         "required_tools": tools,
         "pkg_config_libs": pkg_config,
+        "requirements": preflight["requirements"],
         "system_deps": list(repo.system_deps),
         "first_targets": list(repo.first_targets),
         "replacement_gaps": list(repo.replacement_gaps),
         "next_action": next_action(
             repo,
-            repo.expected_build_classification if ready else "doctor-blocked",
-            "",
+            repo.expected_build_classification if ready else blocked,
+            resolution.diagnostic,
         ),
     }
 
@@ -1284,6 +1428,8 @@ def doctor(root: Path, repos: list[Repo]) -> None:
         status = "ready" if entry["ready"] else "blocked"
         missing = ", ".join(entry["missing"]) if entry["missing"] else "none"
         print(f"{entry['name']}: doctor {status}; missing: {missing}")
+        if not entry["toolchain"]["found"]:
+            print(f"  toolchain: {entry['toolchain']['diagnostic']}")
     (root / "doctor-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1298,10 +1444,16 @@ def next_action(repo: Repo, classification: str, output: str) -> str:
         if repo.name == "zls":
             return "pin an accepted ZLS 0.17-dev build or track the ZLS toolchain window before parity work"
         return "resolve the project Zig lane before modeling build graph parity"
-    if classification == "missing-toolchain":
-        return f"install {repo.build_zig} or set AZAZEL_ZIG_{''.join(ch for ch in repo.build_zig.upper() if ch.isalnum())}"
+    if classification in (zig_toolchain.MISSING, zig_toolchain.UNSUPPORTED, zig_toolchain.FETCH_FAILED):
+        spec = repo.required_toolchain()
+        if classification == zig_toolchain.UNSUPPORTED:
+            return f"replace the local build with {spec.requirement()}, or set {spec.env_key}"
+        if classification == zig_toolchain.FETCH_FAILED:
+            return f"no index or mirror served {spec.requirement()}; install it by hand and set {spec.env_key}"
+        return f"install {spec.requirement()}, set {spec.env_key}, or rerun with --fetch-toolchains"
     if classification == "system-dependency":
-        deps = ", ".join(repo.system_deps or repo.required_tools)
+        missing = system_preflight(repo)["missing"]
+        deps = ", ".join(missing or repo.system_deps or repo.required_tools)
         return f"install host system dependencies, then rerun --doctor and --build: {deps}"
     if classification == "dependency-fetch":
         return "fix dependency archive/cache fetching before translating the target slice"
@@ -1316,22 +1468,113 @@ def next_action(repo: Repo, classification: str, output: str) -> str:
     return "inspect build output and add a stable classification before continuing"
 
 
-def run_build(root: Path, repos: list[Repo]) -> None:
+# Set by --package-cache. When given, every build shares this Zig global cache,
+# so a fresh clone root reuses packages that were already fetched.
+PACKAGE_CACHE: Path | None = None
+
+
+def build_cache_roots(root: Path, repo: Repo) -> dict[str, str]:
+    safe_name = repo.name.replace("-", "_")
+    shared = PACKAGE_CACHE
+    return {
+        "global": str(shared if shared is not None else root / f".zig-cache-{safe_name}-{repo.build_zig}"),
+        "local": str(root / f".zig-cache-local-{safe_name}-{repo.build_zig}"),
+    }
+
+
+def portable_path(path: str, root: Path) -> str:
+    """A path with the clone root written as `<root>` and the shared cache as `<package-cache>`."""
+    prefixes = [(str(root.resolve()), "<root>"), (str(root), "<root>")]
+    if PACKAGE_CACHE is not None:
+        prefixes.insert(0, (str(PACKAGE_CACHE), "<package-cache>"))
+    for prefix, name in prefixes:
+        if path == prefix or path.startswith(prefix + os.sep):
+            return name + path[len(prefix):]
+    return path
+
+
+def portable_text(text: str, root: Path, repo: Repo) -> str:
+    """Build output with machine-specific locations replaced.
+
+    The clone root becomes `<root>`, the shared package cache `<package-cache>`
+    and the toolchain directory `<zig>`. Two runs from different clone roots
+    then differ only in what Zig itself randomises.
+    """
+    replacements = [(str(root.resolve()), "<root>"), (str(root), "<root>")]
+    if PACKAGE_CACHE is not None:
+        replacements.append((str(PACKAGE_CACHE.resolve()), "<package-cache>"))
+        replacements.append((str(PACKAGE_CACHE), "<package-cache>"))
+    resolution = _RESOLUTIONS.get(repo.required_toolchain().id)
+    if resolution is not None and resolution.path:
+        replacements.append((str(Path(resolution.path).parent), "<zig>"))
+    for old, new in sorted(replacements, key=lambda item: -len(item[0])):
+        text = text.replace(old, new)
+    # Zig unpacks each fetched archive under a randomly named directory.
+    return re.sub(r"/tmp/[0-9a-f]{16}(?=/)", "/tmp/<random>", text)
+
+
+def dependencies_report(root: Path, repos: list[Repo]) -> None:
+    """Write the package dependency metadata of each repo, without building."""
     report = []
     for repo in repos:
         path = ensure_clone(root, repo)
-        zig = zig_for(repo.build_zig)
+        info = corpus_deps.describe(path)
+        report.append({"name": repo.name, **info})
+        summary = info["summary"]
+        if info.get("manifest") is None:
+            print(f"{repo.name}: no build.zig.zon")
+        elif "error" in info:
+            print(f"{repo.name}: {info['error']}")
+        else:
+            sources = ", ".join(f"{count} {source}" for source, count in summary["by_source"].items()) or "none"
+            print(f"{repo.name}: {summary['count']} dependencies ({sources}); {summary['lazy']} lazy")
+            if summary["nested_count"]:
+                nested = ", ".join(f"{count} {source}" for source, count in summary["nested_by_source"].items())
+                print(f"  {summary['nested_count']} more in nested path packages ({nested})")
+            everything = info["dependencies"] + info["nested_dependencies"]
+            legacy = sorted({entry["alias"] for entry in everything if entry["hash_format"] == "legacy-multihash"})
+            if legacy:
+                print(f"  pinned in the pre-0.14 hash format: {', '.join(legacy)}")
+    (root / "dependencies-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
+def run_build(root: Path, repos: list[Repo]) -> None:
+    report = []
+    for repo in repos:
+        # Resolve the toolchain before cloning. A repo whose required Zig is
+        # absent is reported from the manifest alone.
+        resolution = resolve_toolchain(repo)
+        zig = resolution.path
+        preflight = system_preflight(repo)
+        dependencies: dict[str, object] = {}
+        diagnosis: dict[str, object] | None = None
+        cache_roots: dict[str, object] = {}
         if not zig:
-            classification = "missing-toolchain"
-            output = f"no Zig binary found for {repo.build_zig}"
+            classification = resolution.status
+            output = resolution.diagnostic
             returncode = 127
             command = list(repo.build_command)
+        elif not preflight["ready"]:
+            # A declared requirement is absent. Report it as such and do not
+            # start a build that can only fail on it.
+            classification = "system-dependency"
+            output = str(preflight["diagnostic"])
+            returncode = 127
+            command = command_with_zig(list(repo.build_command), zig)
         else:
+            path = ensure_clone(root, repo)
+            dependencies = corpus_deps.describe(path)
             command = command_with_zig(list(repo.build_command), zig)
             env = os.environ.copy()
-            safe_name = repo.name.replace("-", "_")
-            env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(root / f".zig-cache-{safe_name}-{repo.build_zig}"))
-            env.setdefault("ZIG_LOCAL_CACHE_DIR", str(root / f".zig-cache-local-{safe_name}-{repo.build_zig}"))
+            caches = build_cache_roots(root, repo)
+            env.setdefault("ZIG_GLOBAL_CACHE_DIR", caches["global"])
+            env.setdefault("ZIG_LOCAL_CACHE_DIR", caches["local"])
+            cache_roots = {
+                "global": portable_path(env["ZIG_GLOBAL_CACHE_DIR"], root),
+                "local": portable_path(env["ZIG_LOCAL_CACHE_DIR"], root),
+                "packages": portable_path(str(Path(env["ZIG_GLOBAL_CACHE_DIR"]) / "p"), root),
+                "shared_package_cache": PACKAGE_CACHE is not None,
+            }
             result = subprocess.run(
                 command,
                 cwd=path,
@@ -1342,13 +1585,21 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 check=False,
             )
             returncode = result.returncode
-            output = result.stdout[-OUTPUT_TAIL_BYTES:]
-            classification = classify_failure(output, returncode)
+            # Classify and diagnose on the full text, then store a tail with
+            # the clone root replaced, so two clone roots give the same report.
+            classification = classify_failure(result.stdout, returncode)
+            if returncode != 0:
+                diagnosis = corpus_deps.diagnose(portable_text(result.stdout, root, repo), dependencies, Path("<root>") / repo.name)
+            output = portable_text(result.stdout, root, repo)[-OUTPUT_TAIL_BYTES:]
         report.append(
             {
                 "name": repo.name,
-                "command": command,
+                "command": [portable_text(part, root, repo) for part in command] if zig else command,
                 "zig": repo.build_zig,
+                "dependencies": dependencies,
+                "dependency_diagnosis": diagnosis,
+                "cache_roots": cache_roots,
+                "toolchain": resolution.as_dict(),
                 "returncode": returncode,
                 "classification": classification,
                 "expected_classification": repo.expected_build_classification,
@@ -1359,6 +1610,7 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 "system_deps": list(repo.system_deps),
                 "required_tools": list(repo.required_tools),
                 "pkg_config_libs": list(repo.pkg_config_libs),
+                "system_requirements": preflight,
                 "replacement_gaps": list(repo.replacement_gaps),
                 "next_action": next_action(repo, classification, output),
                 "output": output,
@@ -1368,6 +1620,13 @@ def run_build(root: Path, repos: list[Repo]) -> None:
             f"{repo.name}: build {classification} "
             f"(expected {repo.expected_build_classification})"
         )
+        if not zig:
+            print(f"  toolchain: {resolution.diagnostic}")
+        elif not preflight["ready"]:
+            for line in str(preflight["diagnostic"]).splitlines():
+                print(f"  {line}")
+        if diagnosis is not None:
+            print(f"  {diagnosis['explanation']}")
     (root / "build-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1385,6 +1644,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
             "build": {
                 "command": list(repo.build_command),
                 "zig": repo.build_zig,
+                "toolchain": repo.required_toolchain().manifest(),
                 "expected_classification": repo.expected_build_classification,
             },
             "azazel": {
@@ -1394,6 +1654,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                 "system_deps": list(repo.system_deps),
                 "required_tools": list(repo.required_tools),
                 "pkg_config_libs": list(repo.pkg_config_libs),
+                "requirements": [item.manifest() for item in repo.requirements],
                 "replacement_gaps": list(repo.replacement_gaps),
                 "integration_kind": repo.integration_kind,
                 "executable_parity": {
@@ -1402,6 +1663,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
                     "expected_classification": repo.expected_executable_parity_classification,
                     "targets": list(repo.executable_parity_targets),
                     "install_checks": list(repo.executable_parity_install_checks),
+                    "generated_outputs": list(repo.executable_parity_generated_outputs),
                     "workdir": ".azazel/parity-work",
                 },
             },
@@ -1416,6 +1678,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
             "expected_classification": repo.expected_executable_parity_classification,
             "targets": list(repo.executable_parity_targets),
             "install_checks": list(repo.executable_parity_install_checks),
+            "generated_outputs": list(repo.executable_parity_generated_outputs),
             "workdir": ".azazel/parity-work",
         },
     )
@@ -1425,6 +1688,7 @@ def load_parity_manifest(path: Path, repo: Repo) -> dict[str, object]:
     executable["expected_classification"] = repo.expected_executable_parity_classification
     executable["targets"] = list(repo.executable_parity_targets)
     executable["install_checks"] = list(repo.executable_parity_install_checks)
+    executable["generated_outputs"] = list(repo.executable_parity_generated_outputs)
     return manifest
 
 
@@ -1464,98 +1728,143 @@ def parity(root: Path, repos: list[Repo]) -> None:
             },
             "parity": parity_state,
         }
+        if repo.executable_parity_generated_outputs:
+            # A slice that declares generated outputs is validated here: it is
+            # built, and each declared file must exist afterwards.
+            slice_entry = executable_parity_entry(root, repo, path)
+            entry["generated_outputs"] = {
+                "declared": slice_entry["generated_outputs"],
+                "validated": slice_entry["generated_outputs_validated"],
+                "missing": slice_entry["missing_generated_outputs"],
+                "classification": slice_entry["classification"],
+                "expected_classification": slice_entry["expected_classification"],
+                "command": slice_entry["command"],
+                "output": slice_entry["output"],
+            }
         report.append(entry)
         print(
             f"{repo.name}: baseline {classification} "
             f"(expected {expected}) -> parity {parity_state}"
         )
+        if "generated_outputs" in entry:
+            generated = entry["generated_outputs"]
+            state = "validated" if generated["validated"] else f"not validated ({generated['classification']})"
+            print(f"  generated outputs {state}: {', '.join(generated['declared'])}")
     (root / "parity-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
+def executable_parity_entry(root: Path, repo: Repo, path: Path) -> dict[str, object]:
+    """Build one repo's Azazel target slice and check what it must produce."""
+    write_executable_parity_workspace(path, repo)
+    materialize_executable_parity_deps(path, repo)
+    manifest = load_parity_manifest(path, repo)
+    azazel = manifest["azazel"]
+    executable = dict(azazel.get("executable_parity", {}))
+    status = str(executable.get("status", "not-modeled"))
+    expected = str(executable.get("expected_classification", "not-modeled"))
+    targets = list(executable.get("targets", []))
+    command = list(executable.get("command", []))
+    install_checks = list(executable.get("install_checks", []))
+    generated_outputs = list(executable.get("generated_outputs", []))
+    missing_generated: list[str] = []
+    workdir = path / str(executable.get("workdir", ".azazel/parity-work"))
+
+    if status != "ready":
+        classification = "not-modeled"
+        returncode = 0
+        output = f"no executable Azazel parity target is modeled for {repo.name}"
+    elif not workdir.exists():
+        classification = "missing-parity-workspace"
+        returncode = 127
+        output = f"missing Azazel parity workspace: {workdir}"
+    else:
+        gen = run(["./gen_build_spec.sh"], cwd=workdir, check=False)
+        if gen.returncode != 0:
+            classification = classify_failure(gen.stdout, gen.returncode)
+            returncode = gen.returncode
+            output = gen.stdout[-OUTPUT_TAIL_BYTES:]
+        else:
+            resolution = resolve_toolchain(repo)
+            zig = resolution.path
+            if not zig:
+                classification = resolution.status
+                returncode = 127
+                output = resolution.diagnostic
+            else:
+                # Remove stale results so a check cannot pass on an old file.
+                for check in install_checks + generated_outputs:
+                    stale = workdir / check
+                    if stale.is_file():
+                        stale.unlink()
+                resolved_command = command_with_zig(command, zig)
+                env = os.environ.copy()
+                safe_name = repo.name.replace("-", "_")
+                env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(root / f".zig-cache-exec-{safe_name}-{repo.build_zig}"))
+                env.setdefault("ZIG_LOCAL_CACHE_DIR", str(root / f".zig-cache-local-exec-{safe_name}-{repo.build_zig}"))
+                result = subprocess.run(
+                    resolved_command,
+                    cwd=workdir,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                classification = classify_failure(result.stdout, result.returncode)
+                returncode = result.returncode
+                output = (gen.stdout + result.stdout)[-OUTPUT_TAIL_BYTES:]
+                command = resolved_command
+                if returncode == 0 and install_checks:
+                    missing = [check for check in install_checks if not (workdir / check).exists()]
+                    if missing:
+                        classification = "missing-install-artifact"
+                        returncode = 1
+                        output = (
+                            output
+                            + "\nmissing executable parity install checks:\n"
+                            + "\n".join(missing)
+                        )[-OUTPUT_TAIL_BYTES:]
+                if returncode == 0 and generated_outputs:
+                    missing_generated = [
+                        check
+                        for check in generated_outputs
+                        if not (workdir / check).is_file() or (workdir / check).stat().st_size == 0
+                    ]
+                    if missing_generated:
+                        classification = "missing-generated-output"
+                        returncode = 1
+                        output = (
+                            output
+                            + "\nmissing or empty generated outputs:\n"
+                            + "\n".join(missing_generated)
+                        )[-OUTPUT_TAIL_BYTES:]
+
+    return {
+        "name": repo.name,
+        "status": status,
+        "targets": targets,
+        "install_checks": install_checks,
+        "generated_outputs": generated_outputs,
+        "generated_outputs_validated": bool(generated_outputs) and returncode == 0 and not missing_generated,
+        "missing_generated_outputs": missing_generated,
+        "workdir": str(workdir.relative_to(path)) if workdir.is_relative_to(path) else str(workdir),
+        "command": command,
+        "zig": repo.build_zig,
+        "returncode": returncode,
+        "classification": classification,
+        "expected_classification": expected,
+        "matches_expected": classification == expected,
+        "output": output,
+    }
 
 
 def executable_parity(root: Path, repos: list[Repo]) -> None:
     report = []
     for repo in repos:
         path = ensure_clone(root, repo)
-        write_executable_parity_workspace(path, repo)
-        materialize_executable_parity_deps(path, repo)
-        manifest = load_parity_manifest(path, repo)
-        azazel = manifest["azazel"]
-        executable = dict(azazel.get("executable_parity", {}))
-        status = str(executable.get("status", "not-modeled"))
-        expected = str(executable.get("expected_classification", "not-modeled"))
-        targets = list(executable.get("targets", []))
-        command = list(executable.get("command", []))
-        install_checks = list(executable.get("install_checks", []))
-        workdir = path / str(executable.get("workdir", ".azazel/parity-work"))
-
-        if status != "ready":
-            classification = "not-modeled"
-            returncode = 0
-            output = f"no executable Azazel parity target is modeled for {repo.name}"
-        elif not workdir.exists():
-            classification = "missing-parity-workspace"
-            returncode = 127
-            output = f"missing Azazel parity workspace: {workdir}"
-        else:
-            gen = run(["./gen_build_spec.sh"], cwd=workdir, check=False)
-            if gen.returncode != 0:
-                classification = classify_failure(gen.stdout, gen.returncode)
-                returncode = gen.returncode
-                output = gen.stdout[-OUTPUT_TAIL_BYTES:]
-            else:
-                zig = zig_for(repo.build_zig)
-                if not zig:
-                    classification = "missing-toolchain"
-                    returncode = 127
-                    output = f"no Zig binary found for {repo.build_zig}"
-                else:
-                    resolved_command = command_with_zig(command, zig)
-                    env = os.environ.copy()
-                    safe_name = repo.name.replace("-", "_")
-                    env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(root / f".zig-cache-exec-{safe_name}-{repo.build_zig}"))
-                    env.setdefault("ZIG_LOCAL_CACHE_DIR", str(root / f".zig-cache-local-exec-{safe_name}-{repo.build_zig}"))
-                    result = subprocess.run(
-                        resolved_command,
-                        cwd=workdir,
-                        env=env,
-                        text=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        check=False,
-                    )
-                    classification = classify_failure(result.stdout, result.returncode)
-                    returncode = result.returncode
-                    output = (gen.stdout + result.stdout)[-OUTPUT_TAIL_BYTES:]
-                    command = resolved_command
-                    if returncode == 0 and install_checks:
-                        missing = [check for check in install_checks if not (workdir / check).exists()]
-                        if missing:
-                            classification = "missing-install-artifact"
-                            returncode = 1
-                            output = (
-                                output
-                                + "\nmissing executable parity install checks:\n"
-                                + "\n".join(missing)
-                            )[-OUTPUT_TAIL_BYTES:]
-
-        matches = classification == expected
-        report.append(
-            {
-                "name": repo.name,
-                "status": status,
-                "targets": targets,
-                "install_checks": install_checks,
-                "workdir": str(workdir.relative_to(path)) if workdir.is_relative_to(path) else str(workdir),
-                "command": command,
-                "zig": repo.build_zig,
-                "returncode": returncode,
-                "classification": classification,
-                "expected_classification": expected,
-                "matches_expected": matches,
-                "output": output,
-            }
-        )
-        print(f"{repo.name}: executable parity {classification} (expected {expected})")
+        entry = executable_parity_entry(root, repo, path)
+        report.append(entry)
+        print(f"{repo.name}: executable parity {entry['classification']} (expected {entry['expected_classification']})")
     (root / "executable-parity-results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -1570,6 +1879,14 @@ def classify_failure(output: str, returncode: int) -> str:
         return "missing-lfs-content"
     if "name must be a valid bare zig identifier" in output:
         return "dependency-format"
+    # A located build.zig.zon error names its own cause. Read it before the
+    # broader text matches below, which can also appear in a source line Zig
+    # echoes under the error.
+    manifest_error = corpus_deps.classify(
+        "\n".join(match.group(0) for match in corpus_deps._ZON_ERROR.finditer(output))
+    )
+    if manifest_error is not None:
+        return manifest_error[0]
     if (
         "unsupported Zig version" in output
         or "unsupported zig version" in output
@@ -1587,6 +1904,8 @@ def classify_failure(output: str, returncode: int) -> str:
     ):
         return "dependency-fetch"
     if "failed to create temporary zip file" in output:
+        return "dependency-fetch"
+    if "bad HTTP response code" in output or "unable to connect to server" in output:
         return "dependency-fetch"
     if "unable to open" in output and "zig-pkg" in output:
         return "dependency-fetch"
@@ -1610,7 +1929,22 @@ def main() -> None:
     parser.add_argument("--executable-parity", action="store_true")
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--doctor", action="store_true")
+    parser.add_argument(
+        "--dependencies",
+        action="store_true",
+        help="write each repo's build.zig.zon dependency metadata to dependencies-results.json",
+    )
+    parser.add_argument(
+        "--package-cache",
+        default=os.environ.get("AZAZEL_PACKAGE_CACHE"),
+        help="a Zig global cache directory shared by every --build, so fetched packages survive a fresh --root",
+    )
     parser.add_argument("--push", action="store_true")
+    parser.add_argument(
+        "--fetch-toolchains",
+        action="store_true",
+        help="download a required Zig toolchain that is not installed, from its index or a known mirror",
+    )
     parser.add_argument(
         "--refresh-base",
         action="store_true",
@@ -1629,6 +1963,10 @@ def main() -> None:
         help="fail if the selected corpus size is not this count; useful before 10-repo batch runs",
     )
     args = parser.parse_args()
+
+    global FETCH_TOOLCHAINS, PACKAGE_CACHE
+    FETCH_TOOLCHAINS = args.fetch_toolchains
+    PACKAGE_CACHE = Path(args.package_cache).resolve() if args.package_cache else None
 
     root = Path(args.root)
     root.mkdir(parents=True, exist_ok=True)
@@ -1652,6 +1990,8 @@ def main() -> None:
         run_build(root, repos)
     if args.doctor:
         doctor(root, repos)
+    if args.dependencies:
+        dependencies_report(root, repos)
     if (
         not args.prepare
         and not args.plan
@@ -1661,8 +2001,12 @@ def main() -> None:
         and not args.executable_parity
         and not args.build
         and not args.doctor
+        and not args.dependencies
     ):
-        parser.error("choose --plan, --roadmap, --prepare, --audit, --parity, --executable-parity, --build, and/or --doctor")
+        parser.error(
+            "choose --plan, --roadmap, --prepare, --audit, --parity, --executable-parity, --build, --doctor, "
+            "and/or --dependencies"
+        )
 
 
 if __name__ == "__main__":

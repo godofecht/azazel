@@ -39,6 +39,123 @@ test "package declarations are well-formed" {
     }
 }
 
+test "system dependencies are well-formed" {
+    const known_os = [_][]const u8{ "linux", "macos", "windows", "freebsd", "netbsd", "openbsd" };
+    for (spec.system_deps, 0..) |dep, i| {
+        try testing.expect(dep.name.len > 0);
+        for (dep.os) |os| {
+            var known = false;
+            for (known_os) |candidate| {
+                if (std.mem.eql(u8, os, candidate)) known = true;
+            }
+            try testing.expect(known);
+        }
+        // Only a pkg-config probe can compare versions.
+        if (dep.min_version != null) try testing.expect(dep.kind == .pkg_config);
+        // One declaration per kind and name.
+        for (spec.system_deps[i + 1 ..]) |other| {
+            try testing.expect(!(dep.kind == other.kind and std.mem.eql(u8, dep.name, other.name)));
+        }
+    }
+}
+
+test "the project declares the host tools its pipeline needs" {
+    var found_python = false;
+    for (spec.system_deps) |dep| {
+        if (dep.kind == .tool and std.mem.eql(u8, dep.name, "python3")) found_python = true;
+    }
+    try testing.expect(found_python);
+}
+
+test "generated steps declare a producer and their outputs" {
+    for (spec.generated, 0..) |gen, i| {
+        try testing.expect(gen.name.len > 0);
+        try testing.expect(gen.outputs.len > 0);
+        switch (gen.producer) {
+            .tool => {
+                try testing.expect(gen.tool_root != null);
+                try testing.expect(gen.tool_name != null);
+            },
+            .command => try testing.expect(gen.command.len > 0),
+            .package => {
+                try testing.expect(gen.package != null);
+                try testing.expect(gen.named_path != null);
+                try testing.expectEqual(@as(usize, 1), gen.outputs.len);
+            },
+        }
+        for (gen.outputs, 0..) |output, j| {
+            try testing.expect(output.name.len > 0);
+            if (output.install) |dest| try testing.expect(dest.len > 0);
+            for (gen.outputs[j + 1 ..]) |other| {
+                try testing.expect(!std.mem.eql(u8, output.name, other.name));
+            }
+        }
+        for (spec.generated[i + 1 ..]) |other| {
+            try testing.expect(!std.mem.eql(u8, gen.name, other.name));
+        }
+    }
+}
+
+test "every consumed generated output is declared" {
+    for (spec.modules) |m| {
+        for (m.generated) |use| {
+            var found = false;
+            for (spec.generated) |gen| {
+                if (!std.mem.eql(u8, gen.name, use.from)) continue;
+                for (gen.outputs) |output| {
+                    if (std.mem.eql(u8, output.name, use.output)) found = true;
+                }
+            }
+            try testing.expect(found);
+            switch (use.as) {
+                .import, .embed => try testing.expect(use.alias.len > 0),
+                .c_source, .include => {},
+            }
+        }
+    }
+}
+
+test "app imports the generated build_info module" {
+    var found = false;
+    for (spec.modules) |m| {
+        if (!std.mem.eql(u8, m.name, "app")) continue;
+        for (m.generated) |use| {
+            if (use.as == .import and std.mem.eql(u8, use.alias, "build_info")) {
+                try testing.expectEqualStrings("build_info", use.from);
+                try testing.expectEqualStrings("build_info.zig", use.output);
+                found = true;
+            }
+        }
+    }
+    try testing.expect(found);
+}
+
+fn packageDeclared(name: []const u8) bool {
+    for (spec.packages) |pkg| {
+        if (std.mem.eql(u8, pkg.name, name)) return true;
+    }
+    return false;
+}
+
+test "every package a module or generator uses is declared" {
+    // build.zig looks a package up by name to learn whether it is lazy.
+    for (spec.modules) |m| {
+        for (m.pkg_imports) |item| try testing.expect(packageDeclared(item.package));
+        for (m.pkg_artifacts) |item| try testing.expect(packageDeclared(item.package));
+        for (m.pkg_library_paths) |item| try testing.expect(packageDeclared(item.package));
+    }
+    for (spec.generated) |gen| {
+        if (gen.package) |pkg| try testing.expect(packageDeclared(pkg.package));
+    }
+    for (spec.packages, 0..) |pkg, i| {
+        for (spec.packages[i + 1 ..]) |other| {
+            try testing.expect(!std.mem.eql(u8, pkg.name, other.name));
+        }
+        // A fetched package is pinned by hash.
+        if (pkg.url != null) try testing.expect(pkg.hash != null);
+    }
+}
+
 test "build options are unique and typed" {
     for (spec.options, 0..) |a, i| {
         try testing.expect(a.name.len > 0);
@@ -195,7 +312,7 @@ fn hasModule(name: []const u8) bool {
 }
 
 test "every declared dependency resolves to a declared module" {
-    // build.zig does `built.get(dep).?` — an unresolved dep panics there.
+    // build.zig does `built.get(dep).?`, so an unresolved dep panics there.
     for (spec.modules) |m| {
         for (m.deps) |dep| {
             try testing.expect(hasModule(dep));

@@ -13,6 +13,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# The ZON reader lives beside the corpus tooling and is shared with it.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+
+import zon  # noqa: E402
+
 REQUIRED_MODULE_FIELDS = {
     "kind",
     "artifact_name",
@@ -28,6 +33,7 @@ REQUIRED_MODULE_FIELDS = {
     "build_options",
     "option_values",
     "gen_imports",
+    "generated",
     "build_options_import",
     "native",
     "optimize",
@@ -74,6 +80,30 @@ def validate_graph(data: dict, root: Path) -> list[str]:
     if not isinstance(modules, dict) or not modules:
         return ["build.modules must contain at least one module"]
 
+    if not isinstance(data.get("system_deps"), list):
+        errors.append("build.system_deps is not exported; add `build: system_deps: _system_deps` to export.cue")
+
+    generated = data.get("generated")
+    if not isinstance(generated, dict):
+        errors.append("build.generated is not exported; add `build: generated: _generated` to export.cue")
+        generated = {}
+    for gen_name, gen in generated.items():
+        for key in ("root",):
+            tool = gen.get("tool")
+            if isinstance(tool, dict) and not (root / tool.get(key, "")).is_file():
+                errors.append(f"generated {gen_name!r} tool root does not exist: {tool.get(key)}")
+        for arg in gen.get("args", []):
+            if arg.get("kind") == "input_file" and not (root / arg.get("value", "")).exists():
+                errors.append(f"generated {gen_name!r} input file does not exist: {arg.get('value')}")
+        stdin = gen.get("stdin")
+        if stdin and not (root / stdin).is_file():
+            errors.append(f"generated {gen_name!r} stdin file does not exist: {stdin}")
+
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        packages = {}
+    errors.extend(package_errors(packages, modules, generated, root))
+
     names = set(modules)
     graph: dict[str, list[str]] = {}
 
@@ -89,6 +119,16 @@ def validate_graph(data: dict, root: Path) -> list[str]:
         source = module.get("root")
         if isinstance(source, str) and not (root / source).is_file():
             errors.append(f"module {name!r} root does not exist: {source}")
+
+        for use in module.get("generated", []) or []:
+            source = generated.get(use.get("from"))
+            if source is None:
+                errors.append(f"module {name!r} consumes unknown generated step {use.get('from')!r}")
+            elif use.get("output") not in [out.get("name") for out in source.get("outputs", [])]:
+                errors.append(
+                    f"module {name!r} consumes {use.get('output')!r}, which generated step "
+                    f"{use.get('from')!r} does not declare in outputs"
+                )
 
         deps = module.get("deps", [])
         if not isinstance(deps, list):
@@ -124,6 +164,84 @@ def validate_graph(data: dict, root: Path) -> list[str]:
     return errors
 
 
+def package_errors(packages: dict, modules: dict, generated: dict, root: Path) -> list[str]:
+    """Check that every package a module uses is declared and matches build.zig.zon."""
+    errors: list[str] = []
+    for name, module in modules.items():
+        if not isinstance(module, dict):
+            continue
+        for field, what in (("pkg_imports", "imports"), ("pkg_artifacts", "links"), ("pkg_library_paths", "searches")):
+            for item in module.get(field, []) or []:
+                package = item.get("package")
+                if package not in packages:
+                    errors.append(f"module {name!r} {what} package {package!r}, which is not declared in packages")
+    for name, gen in generated.items():
+        package = (gen.get("package") or {}).get("package")
+        if package is not None and package not in packages:
+            errors.append(f"generated {name!r} reads package {package!r}, which is not declared in packages")
+
+    if not packages:
+        return errors
+    for alias, entry in packages.items():
+        if not entry.get("url") and not entry.get("path"):
+            errors.append(f"package {alias!r} needs a url or a path")
+        if entry.get("url") and not entry.get("hash"):
+            errors.append(f"package {alias!r} has a url and needs a hash")
+    manifest = root / "build.zig.zon"
+    if not manifest.is_file():
+        errors.append("packages are declared but there is no build.zig.zon; create one, then run `azazel zon write`")
+        return errors
+    try:
+        actual = zon.read_dependencies(manifest.read_text(encoding="utf-8"))
+    except (zon.ZonError, ValueError) as exc:
+        errors.append(f"build.zig.zon: {exc}")
+        return errors
+    problems = zon.diff_dependencies(zon.from_packages(packages), actual)
+    errors.extend(problems)
+    if problems:
+        errors.append("build.zig.zon is out of step with project.cue; run `azazel zon write`")
+    return errors
+
+
+def cmd_zon(root: Path, args: list[str]) -> int:
+    """Keep build.zig.zon dependencies and project.cue packages in step.
+
+    check            compare the two and list every difference
+    write            rewrite `.dependencies` in build.zig.zon from `packages`
+    import <file>    print a `packages` block for another build.zig.zon
+    """
+    action = args[0] if args else "check"
+    if action == "import":
+        if len(args) != 2:
+            print("usage: azazel zon import <path/to/build.zig.zon>", file=sys.stderr)
+            return 2
+        deps = zon.read_dependencies(Path(args[1]).read_text(encoding="utf-8"))
+        sys.stdout.write(zon.render_cue_packages(deps))
+        return 0
+
+    declared = zon.from_packages(cue_export(root).get("packages") or {})
+    manifest = root / "build.zig.zon"
+    if not manifest.is_file():
+        raise RuntimeError("no build.zig.zon in the project root")
+    text = manifest.read_text(encoding="utf-8")
+    if action == "check":
+        problems = zon.diff_dependencies(declared, zon.read_dependencies(text))
+        for problem in problems:
+            print(f"error: {problem}", file=sys.stderr)
+        if problems:
+            return 1
+        print(f"azazel: build.zig.zon matches project.cue ({len(declared)} packages)")
+        return 0
+    if action == "write":
+        updated = zon.replace_dependencies(text, declared)
+        if updated != text:
+            manifest.write_text(updated, encoding="utf-8")
+        print(f"azazel: wrote {len(declared)} dependencies to build.zig.zon")
+        return 0
+    print(f"error: unknown zon action: {action}", file=sys.stderr)
+    return 2
+
+
 def cmd_check(root: Path) -> int:
     data = cue_export(root)
     errors = validate_graph(data, root)
@@ -150,6 +268,21 @@ def cmd_build(root: Path, extra: list[str]) -> int:
     return result.returncode
 
 
+def cmd_doctor(root: Path) -> int:
+    """Check the declared system dependencies without building any artifact."""
+    data = cue_export(root)
+    deps = data.get("system_deps") or []
+    if cmd_gen(root) != 0:
+        return 1
+    require_tool("zig")
+    result = run(["zig", "build", "doctor"], cwd=root, capture=False)
+    if result.returncode != 0:
+        print("azazel: system dependencies are missing; see the errors above", file=sys.stderr)
+        return result.returncode
+    print(f"azazel: system dependencies satisfied ({len(deps)} declared)")
+    return 0
+
+
 def cmd_clean(root: Path) -> int:
     for name in ("build_spec.zig", ".build_spec.stamp"):
         path = root / name
@@ -173,6 +306,8 @@ def usage() -> None:
         "usage:\n"
         "  azazel check\n"
         "  azazel gen\n"
+        "  azazel doctor\n"
+        "  azazel zon [check | write | import <build.zig.zon>]\n"
         "  azazel build [zig build args...]\n"
         "  azazel clean\n"
         "  azazel info"
@@ -196,6 +331,10 @@ def main() -> int:
             return cmd_check(root)
         if command == "gen":
             return cmd_gen(root)
+        if command == "doctor":
+            return cmd_doctor(root)
+        if command == "zon":
+            return cmd_zon(root, rest)
         if command == "build":
             return cmd_build(root, rest)
         if command == "clean":
@@ -205,7 +344,7 @@ def main() -> int:
         print(f"error: unknown command: {command}", file=sys.stderr)
         usage()
         return 2
-    except RuntimeError as exc:
+    except (RuntimeError, zon.ZonError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

@@ -1,6 +1,7 @@
 const std = @import("std");
 const spec = @import("build_spec.zig");
 const builtin = @import("builtin");
+const compat = @import("compat.zig");
 
 fn laneMatchesCurrent(comptime lane: []const u8) bool {
     if (std.mem.eql(u8, lane, "0.14")) {
@@ -101,7 +102,7 @@ fn applyPackageLibraryPaths(
     for (paths) |path| {
         if (!targetOsMatches(path.os, target)) continue;
         if (!targetArchMatches(path.arch, target)) continue;
-        const dep = b.lazyDependency(path.package, .{}) orelse @panic("package library path dependency unavailable");
+        const dep = b.lazyDependency(path.package, .{}) orelse continue;
         step.root_module.addLibraryPath(dep.path(path.path));
     }
 }
@@ -172,7 +173,7 @@ fn generatedModule(b: *std.Build, gen: spec.GeneratedImport) *std.Build.Module {
     // Compile the repo's host tool, run it, and turn the file it writes into a
     // module. The tool builds for the host (it runs at build time), and the run
     // captures each output file's path from the build graph so the emitted file
-    // is a real dependency, not a fixed path on disk.
+    // is a real dependency of the build graph.
     const tool = b.addExecutable(.{
         .name = gen.tool_name,
         .root_module = b.createModule(.{
@@ -200,6 +201,96 @@ fn generatedModule(b: *std.Build, gen: spec.GeneratedImport) *std.Build.Module {
     return b.createModule(.{
         .root_source_file = output_path orelse @panic("generated import names no output_file matching `output`"),
     });
+}
+
+const GeneratedPaths = std.StringHashMap(std.Build.LazyPath);
+
+fn generatedKey(b: *std.Build, step_name: []const u8, output: []const u8) []const u8 {
+    return b.fmt("{s}\n{s}", .{ step_name, output });
+}
+
+fn captureStdOut(run: *std.Build.Step.Run, basename: []const u8) std.Build.LazyPath {
+    // Zig 0.16 takes an options struct and can name the captured file. Earlier
+    // lanes take no argument and always name it `stdout`.
+    const params = @typeInfo(@TypeOf(std.Build.Step.Run.captureStdOut)).@"fn".params;
+    if (params.len == 2) return run.captureStdOut(.{ .basename = basename });
+    return run.captureStdOut();
+}
+
+/// Turn every `generated` declaration into build steps and record the path of
+/// each output. Outputs are LazyPaths, so a module that consumes one waits for
+/// the generator, and the generator reruns when its inputs change.
+fn addGenerated(b: *std.Build, target: std.Build.ResolvedTarget, paths: *GeneratedPaths) void {
+    const all = b.step("generate", "Produce every generated file declared in project.cue");
+
+    for (spec.generated) |gen| {
+        switch (gen.producer) {
+            .package => {
+                // A lazy package is absent on the first configure pass. Stand in
+                // an empty file so the graph is complete; Zig discards this pass
+                // and configures again once the package is fetched.
+                const path = if (dependencyForImport(b, gen.package.?, target, gen.package_optimize)) |dep|
+                    dep.namedLazyPath(gen.named_path.?)
+                else
+                    b.addWriteFiles().add(gen.outputs[0].name, "");
+                paths.put(generatedKey(b, gen.name, gen.outputs[0].name), path) catch @panic("OOM");
+            },
+            .tool, .command => {
+                const run = if (gen.producer == .tool) blk: {
+                    // The tool runs during the build, so it compiles for the host.
+                    const tool = b.addExecutable(.{
+                        .name = gen.tool_name.?,
+                        .root_module = b.createModule(.{
+                            .root_source_file = b.path(gen.tool_root.?),
+                            .target = b.graph.host,
+                        }),
+                    });
+                    break :blk b.addRunArtifact(tool);
+                } else b.addSystemCommand(gen.command);
+                run.setName(b.fmt("generate {s}", .{gen.name}));
+
+                for (gen.args) |arg| {
+                    if (std.mem.eql(u8, arg.kind, "literal")) {
+                        run.addArg(arg.value);
+                    } else if (std.mem.eql(u8, arg.kind, "input_file")) {
+                        run.addFileArg(b.path(arg.value));
+                    } else if (std.mem.eql(u8, arg.kind, "output_file")) {
+                        const path = run.addOutputFileArg(arg.value);
+                        paths.put(generatedKey(b, gen.name, arg.value), path) catch @panic("OOM");
+                    } else {
+                        @panic("unsupported generated arg kind");
+                    }
+                }
+                if (gen.stdin) |file| run.setStdIn(.{ .lazy_path = b.path(file) });
+                if (gen.stdout) |name| {
+                    paths.put(generatedKey(b, gen.name, name), captureStdOut(run, name)) catch @panic("OOM");
+                }
+            },
+        }
+
+        for (gen.outputs) |output| {
+            const path = paths.get(generatedKey(b, gen.name, output.name)) orelse
+                @panic("generated output is declared but nothing produces it");
+            path.addStepDependencies(all);
+            if (output.install) |dest| {
+                const install = b.addInstallFile(path, dest);
+                b.getInstallStep().dependOn(&install.step);
+            }
+        }
+    }
+}
+
+fn applyGenerated(b: *std.Build, mod: *std.Build.Module, uses: []const spec.GeneratedUse, paths: *const GeneratedPaths) void {
+    for (uses) |use| {
+        const path = paths.get(generatedKey(b, use.from, use.output)) orelse
+            @panic("module consumes a generated output that is not declared");
+        switch (use.as) {
+            .import => mod.addImport(use.alias, b.createModule(.{ .root_source_file = path })),
+            .embed => mod.addAnonymousImport(use.alias, .{ .root_source_file = path }),
+            .c_source => mod.addCSourceFile(.{ .file = path, .flags = &.{} }),
+            .include => mod.addIncludePath(path.dirname()),
+        }
+    }
 }
 
 fn applyNative(b: *std.Build, mod: *std.Build.Module, native: spec.Native) void {
@@ -232,6 +323,133 @@ fn applyNative(b: *std.Build, mod: *std.Build.Module, native: spec.Native) void 
     }
 }
 
+fn systemDepApplies(dep: spec.SystemDep, host: std.Target, target: std.Target) bool {
+    if (dep.os.len == 0) return true;
+    // A tool runs on the machine doing the build. Everything else is consumed
+    // by the artifact, so it follows the target.
+    const tag = if (dep.kind == .tool) host.os.tag else target.os.tag;
+    for (dep.os) |name| {
+        if (std.mem.eql(u8, name, @tagName(tag))) return true;
+    }
+    return false;
+}
+
+fn systemDepLabel(b: *std.Build, dep: spec.SystemDep) []const u8 {
+    const what = switch (dep.kind) {
+        .tool => "tool",
+        .pkg_config => "pkg-config library",
+        .library => "system library",
+        .framework => "framework",
+        .header => "header",
+        .include_dir => "include directory",
+    };
+    if (dep.hint.len == 0) return b.fmt("system dependency: {s} {s}", .{ what, dep.name });
+    return b.fmt("system dependency: {s} {s} ({s})", .{ what, dep.name, dep.hint });
+}
+
+/// Check every declared system dependency before any artifact compiles.
+///
+/// Tools and include directories are checked while the graph is configured.
+/// pkg-config libraries are probed with `pkg-config --exists`. Headers,
+/// libraries and frameworks are probed by compiling or linking a one-line C
+/// program with `zig cc`, and only when the target is the host.
+fn addSystemPreflight(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step {
+    const doctor = b.step("doctor", "Check the system dependencies declared in project.cue");
+    const host = b.graph.host.result;
+    const native = target.result.os.tag == host.os.tag and target.result.cpu.arch == host.cpu.arch;
+    const ioh = if (compat.has_io) b.graph.io else {};
+
+    var probe_source: ?std.Build.LazyPath = null;
+
+    for (spec.system_deps) |dep| {
+        if (!systemDepApplies(dep, host, target.result)) continue;
+        const label = systemDepLabel(b, dep);
+
+        switch (dep.kind) {
+            .tool => {
+                _ = b.findProgram(&.{dep.name}, &.{}) catch {
+                    const fail = b.addFail(b.fmt("missing {s}: not found on PATH", .{label}));
+                    doctor.dependOn(&fail.step);
+                };
+            },
+            .include_dir => {
+                if (!compat.exists(ioh, b.pathFromRoot(dep.name))) {
+                    const fail = b.addFail(b.fmt("missing {s}: directory does not exist", .{label}));
+                    doctor.dependOn(&fail.step);
+                }
+            },
+            .pkg_config => {
+                _ = b.findProgram(&.{"pkg-config"}, &.{}) catch {
+                    const fail = b.addFail(b.fmt("missing {s}: pkg-config is not on PATH", .{label}));
+                    doctor.dependOn(&fail.step);
+                    continue;
+                };
+                const run = b.addSystemCommand(&.{ "pkg-config", "--exists", "--print-errors" });
+                if (dep.min_version) |version| run.addArg(b.fmt("--atleast-version={s}", .{version}));
+                run.addArg(dep.name);
+                run.setName(label);
+                doctor.dependOn(&run.step);
+            },
+            .header, .library, .framework => {
+                if (!native) continue;
+                const source = probe_source orelse blk: {
+                    const files = b.addWriteFiles();
+                    const path = files.add("azazel_probe.c", "int main(void) { return 0; }\n");
+                    probe_source = path;
+                    break :blk path;
+                };
+                const run = b.addSystemCommand(&.{ b.graph.zig_exe, "cc" });
+                run.setName(label);
+                switch (dep.kind) {
+                    .header => {
+                        run.addArgs(&.{ "-c", "-include", dep.name });
+                        for (spec.system_deps) |other| {
+                            if (other.kind != .include_dir) continue;
+                            if (!systemDepApplies(other, host, target.result)) continue;
+                            run.addArgs(&.{ "-I", b.pathFromRoot(other.name) });
+                        }
+                        run.addFileArg(source);
+                        run.addArg("-o");
+                        _ = run.addOutputFileArg("azazel_probe.o");
+                    },
+                    .library => {
+                        run.addFileArg(source);
+                        run.addArg(b.fmt("-l{s}", .{dep.name}));
+                        run.addArg("-o");
+                        _ = run.addOutputFileArg("azazel_probe");
+                    },
+                    .framework => {
+                        run.addFileArg(source);
+                        run.addArgs(&.{ "-framework", dep.name });
+                        run.addArg("-o");
+                        _ = run.addOutputFileArg("azazel_probe");
+                    },
+                    else => unreachable,
+                }
+                doctor.dependOn(&run.step);
+            },
+        }
+    }
+    return doctor;
+}
+
+fn packageIsLazy(name: []const u8) bool {
+    for (spec.packages) |pkg| {
+        if (std.mem.eql(u8, pkg.name, name)) return pkg.lazy;
+    }
+    return false;
+}
+
+/// Resolve a `build.zig.zon` dependency by the name declared in `packages`.
+///
+/// A package marked `lazy` goes through `lazyDependency`. That returns null
+/// until Zig has fetched it; Zig then fetches it and configures the build
+/// again, so callers skip the package on the first pass.
+fn packageDependency(b: *std.Build, package: []const u8, args: anytype) ?*std.Build.Dependency {
+    if (packageIsLazy(package)) return b.lazyDependency(package, args);
+    return b.dependency(package, args);
+}
+
 fn dependencyWithoutBackend(
     b: *std.Build,
     package: []const u8,
@@ -239,24 +457,24 @@ fn dependencyWithoutBackend(
     pass_optimize: bool,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     if (pass_target and pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .optimize = optimize,
         });
     }
     if (pass_target) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
         });
     }
     if (pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .optimize = optimize,
         });
     }
-    return b.dependency(package, .{});
+    return packageDependency(b, package, .{});
 }
 
 fn dependencyWithBackend(
@@ -267,27 +485,27 @@ fn dependencyWithBackend(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     comptime backend: anytype,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     if (pass_target and pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .optimize = optimize,
             .backend = backend,
         });
     }
     if (pass_target) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .backend = backend,
         });
     }
     if (pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .optimize = optimize,
             .backend = backend,
         });
     }
-    return b.dependency(package, .{
+    return packageDependency(b, package, .{
         .backend = backend,
     });
 }
@@ -300,7 +518,7 @@ fn dependencyWithOptions(
     backend: ?[]const u8,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     const backend_name = backend orelse return dependencyWithoutBackend(b, package, pass_target, pass_optimize, target, optimize);
 
     if (std.mem.eql(u8, backend_name, "no_backend")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .no_backend);
@@ -331,27 +549,27 @@ fn dependencyWithFields(
     fields: []const []const u8,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     if (pass_target and pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .optimize = optimize,
             .fields = fields,
         });
     }
     if (pass_target) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .target = target,
             .fields = fields,
         });
     }
     if (pass_optimize) {
-        return b.dependency(package, .{
+        return packageDependency(b, package, .{
             .optimize = optimize,
             .fields = fields,
         });
     }
-    return b.dependency(package, .{
+    return packageDependency(b, package, .{
         .fields = fields,
     });
 }
@@ -361,7 +579,7 @@ fn dependencyForImport(
     pkg_import: spec.PackageImport,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     // A `fields` string-list option (e.g. uucode's Unicode property tables) is
     // passed alongside target/optimize. It is mutually exclusive with `backend`
     // in practice: no corpus dependency takes both.
@@ -392,7 +610,7 @@ fn dependencyForArtifact(
     pkg_artifact: spec.PackageArtifact,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-) *std.Build.Dependency {
+) ?*std.Build.Dependency {
     return dependencyWithOptions(
         b,
         pkg_artifact.package,
@@ -407,6 +625,11 @@ fn dependencyForArtifact(
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
+    // Every artifact and the install step wait on the system preflight, so a
+    // missing host requirement is reported before any compile starts.
+    const preflight = addSystemPreflight(b, target);
+    b.getInstallStep().dependOn(preflight);
+
     // A Zig module for every declared module, and a compile step only for the
     // ones that become a real artifact. An `import` dependency is merged into
     // its dependents as a module, so it needs no artifact and no link step.
@@ -414,6 +637,10 @@ pub fn build(b: *std.Build) void {
     var steps = std.StringHashMap(*std.Build.Step.Compile).init(b.allocator);
     defer modules.deinit();
     defer steps.deinit();
+
+    var generated = GeneratedPaths.init(b.allocator);
+    defer generated.deinit();
+    addGenerated(b, target, &generated);
 
     for (spec.modules) |m| {
         // Zig 0.15 takes target and optimize on the module rather than on the
@@ -434,16 +661,17 @@ pub fn build(b: *std.Build) void {
     for (spec.modules) |m| {
         const mod = modules.get(m.name).?;
         for (m.pkg_imports) |pkg_import| {
-            const dep = dependencyForImport(b, pkg_import, target, m.optimize);
+            const dep = dependencyForImport(b, pkg_import, target, m.optimize) orelse continue;
             mod.addImport(pkg_import.alias, dep.module(pkg_import.module));
         }
         for (m.pkg_artifacts) |pkg_artifact| {
-            const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize);
+            const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize) orelse continue;
             mod.linkLibrary(dep.artifact(pkg_artifact.artifact));
         }
         for (m.gen_imports) |gen| {
             mod.addImport(gen.alias, generatedModule(b, gen));
         }
+        applyGenerated(b, mod, m.generated, &generated);
     }
 
     for (spec.modules) |m| {
@@ -478,6 +706,7 @@ pub fn build(b: *std.Build) void {
             }),
             .module => unreachable,
         };
+        step.step.dependOn(preflight);
         for (m.pre, 0..) |cmd, idx| {
             const pre = addCommand(b, m.name, "pre", idx, cmd);
             step.step.dependOn(pre);

@@ -36,7 +36,8 @@ jobs:
 
       - name: Static checks
         run: |
-          python3 -m py_compile azazel scripts/build_site.py tools/huge_corpus.py
+          python3 -m py_compile azazel scripts/build_site.py tools/huge_corpus.py tools/zig_toolchain.py
+          python3 -m unittest discover -s tools -p 'test_*.py'
           sh -n gen_build_spec.sh setup.sh cache_key.sh cache_build.sh
           python3 scripts/build_site.py
 
