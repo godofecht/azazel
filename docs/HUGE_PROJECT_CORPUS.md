@@ -196,6 +196,71 @@ not claim full project build replacement yet; library variants, generated
 pkg-config/manpage outputs, benchmarks, examples, and artifact checks and full
 example selection remain tracked replacement gaps.
 
+## Target Slices
+
+A repo can declare `target_slices` in `tools/huge_corpus.py`. A slice names a
+group of nested packages or sample directories by glob. `--build` builds the
+slice and not the whole repo.
+
+```sh
+tools/huge_corpus.py --build --repo zig-gamedev
+tools/huge_corpus.py --build --repo zig-gamedev --target-path 'samples/minimal_glfw_*'
+tools/huge_corpus.py --build --repo microzig --slice ports --target-path 'port/raspberrypi/*'
+tools/huge_corpus.py --build --repo zig-gamedev --whole-repo
+tools/huge_corpus.py --parity --repo microzig
+```
+
+| Slice | Repo | Patterns | Mode |
+| --- | --- | --- | --- |
+| `minimal-samples` | zig-gamedev | `samples/minimal_*` | `steps` |
+| `ports` | microzig | `port/*/*` | `package` |
+| `example-boards` | microzig | `examples/*/*` | `package` |
+
+The glob rules are the ones the Azazel core uses for `--slice`. `*` matches
+within one path segment, `**` crosses segments, and `?` matches one character.
+
+A `package` slice runs `zig build` inside each matching directory that has a
+`build.zig` or `build.zig.zon`, so a chip port builds from its own root with
+its own manifest. A `steps` slice runs `zig build <name>` at the repo root,
+once per matching directory, with the directory name as the step. The runner
+reads `zig build -l` first. A directory whose step does not exist on this host
+is skipped with a reason and is not a failure. On macOS the four Direct3D 12
+minimal samples of zig-gamedev are skipped that way.
+
+Each directory builds on its own, so a failure belongs to one path. A result
+has its own command, working directory, classification, output tail,
+dependency diagnosis and install outputs. The report at the top level lists
+`selected_target_paths`, and `target_slice` holds one summary per slice:
+
+```json
+{
+  "slice": "minimal-samples",
+  "patterns": ["samples/minimal_*"],
+  "mode": "steps",
+  "selected_paths": ["samples/minimal_glfw_gl", "samples/minimal_sdl_gl"],
+  "skipped": [{"path": "samples/minimal_d3d12", "reason": "build step 'minimal_d3d12' is not defined for this target"}],
+  "failed_paths": [],
+  "results": [{"path": "samples/minimal_glfw_gl", "cwd": ".", "classification": "ok",
+               "output_prefix": "zig-out", "outputs": {"found": ["bin/minimal_glfw_gl"], "missing": []}}]
+}
+```
+
+`outputs` on a slice lists the files each directory must install under its
+`output_prefix`. `{name}` is the directory name. A missing file gives
+`missing-slice-output`. A slice that selects no directory gives `empty-slice`.
+
+`--parity` records the same selection without building: `target_slices` and
+`selected_target_paths` sit next to the baseline result. `--prepare` writes the
+resolved selection into `.azazel/corpus.json` as `target_slice_selection`.
+
+`--slice NAME` limits a run to the named slices. `--target-path GLOB` narrows
+the chosen slices to matching directories, and a slice it empties is left out.
+`--whole-repo` ignores slices and runs `build_command`, which is how the
+corpus built before slices existed.
+
+Nested directories are found by walking the clone for a `build.zig` or a
+`build.zig.zon`. `zig-pkg`, `zig-out`, `.zig-cache` and `.git` are not walked.
+
 ## Package Dependencies
 
 `tools/huge_corpus.py --dependencies` parses each repo's `build.zig.zon` and

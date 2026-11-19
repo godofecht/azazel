@@ -14,6 +14,7 @@ _packages: packages
 _options: options
 _system_deps: system_deps
 _generated: generated
+_subprojects: subprojects
 
 build: modules: {
 	for k, v in _modules {
@@ -23,6 +24,7 @@ build: modules: {
 			// module sets it explicitly.
 			artifact_name: (v & {artifact_name: *k | string}).artifact_name
 			root:     v.root
+			subproject: v.subproject
 			deps:     v.deps
 			link:     v.link
 			pre:      v.pre
@@ -47,3 +49,4 @@ build: packages: _packages
 build: options: _options
 build: system_deps: _system_deps
 build: generated: _generated
+build: subprojects: _subprojects

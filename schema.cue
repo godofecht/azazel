@@ -189,6 +189,11 @@ package build
 	kind:     #Kind
 	root:     string
 
+	// The nested package this module belongs to, by its key in `subprojects`.
+	// Empty means the module belongs to the repository root. `root` stays
+	// relative to the repository root and must lie under the subproject path.
+	subproject: string | *""
+
 	// The produced artifact's name. Defaults to the module key. Set it when the
 	// built exe or library should carry a name distinct from the module's graph
 	// and `@import` name, e.g. a static `lib:xev` alongside a `module:xev`
@@ -250,6 +255,23 @@ package build
 	hint: string | *""
 }
 
+// A nested build package or sample directory inside the repository.
+//
+// A subproject records the package-local root and where its artifacts land.
+// It lets a build name a slice of the repository, such as `samples/minimal_*`
+// or `port/*/*`, instead of building every module. A subproject whose path
+// lies under another subproject's path is a nested workspace.
+//
+// `path` is relative to the repository root, with no `..` and no trailing
+// slash. `output_dir` is relative to the install prefix. Artifacts install
+// under `<output_dir>/bin` and `<output_dir>/lib` when it is set, and under
+// `bin` and `lib` when it is empty.
+#Subproject: {
+	path: string & !=""
+	output_dir: string | *""
+	description: string | *""
+}
+
 #Profiles: {
 	debug: {
 		optimize: "Debug"
@@ -274,3 +296,4 @@ packages: [string]: #Package | *{}
 options: [...#Option] | *[]
 system_deps: [...#SystemDep] | *[]
 generated: [string]: #Generated
+subprojects: [string]: #Subproject

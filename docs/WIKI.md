@@ -321,6 +321,67 @@ has no extension. Consume it with `embed` or `install` on those lanes.
 `gen_imports` on a module is the older, narrower form: one host tool whose
 output is imported by that module only.
 
+### Subprojects and target slices
+
+`subprojects` is a top-level map of nested packages. Each one records a
+package-local root and where its artifacts install. A module joins a subproject
+with `subproject`.
+
+```cue
+subprojects: {
+    danzig:      {path: "src/danzig"}
+    danzig_gain: {path: "examples/danzig-gain", output_dir: "examples/danzig-gain"}
+}
+
+danzig_gain: #Module & {
+    kind: "shared"
+    subproject: "danzig_gain"
+    root: "examples/danzig-gain/root.zig"
+    deps: ["danzig"]
+}
+```
+
+`path` is relative to the repository root. It has no `..` and no trailing
+slash. `output_dir` is relative to the install prefix. When it is set, the
+subproject's executables install under `<output_dir>/bin` and its libraries
+under `<output_dir>/lib`. A subproject whose path lies under another
+subproject's path is a nested workspace.
+
+A module's `root` stays relative to the repository root and must lie under its
+subproject's `path`. `azazel check` and the generator both reject a module
+outside its subproject, an unknown subproject, a missing directory, two
+subprojects with one path, and a path that escapes the repository. Every
+message names the subproject it concerns.
+
+Each module has a target path. It is `<subproject path>/<module name>`, or the
+module name for a module of the repository root. A slice is a glob over target
+paths and subproject paths.
+
+| Glob | Matches |
+|---|---|
+| `*` | any run of characters except `/` |
+| `?` | one character except `/` |
+| `**` | any run of characters including `/`; `**/` also matches no segment |
+
+```sh
+python3 azazel targets                          # every target path
+python3 azazel targets --slice 'examples/*'     # what a slice selects
+python3 azazel build --slice 'examples/*'       # build and install only those
+python3 azazel build --subproject danzig_gain   # select a subproject by name
+zig build subproject-danzig_gain                # the same through a generated step
+zig build -Dslice='examples/*' -Dsubproject=danzig   # both options repeat
+```
+
+Only the selected modules install. A selected module still builds the modules
+it depends on, because linking needs them, and the install step skips the rest.
+A slice or subproject name that matches nothing fails before Zig compiles
+anything, and the message lists the target paths that exist. When a selected
+build fails, `azazel build` names the subproject paths it was building.
+
+The glob matcher exists twice, in `compat.zig` for `build.zig` and in
+`tools/workspace.py` for the CLI and the corpus. Both read
+`tools/glob_cases.txt` in their tests.
+
 ### Packages and build.zig.zon
 
 `packages` declares the project's `build.zig.zon` dependencies. The map name is
@@ -441,7 +502,10 @@ Azazel executable-parity result means a modeled target slice actually compiled
 through the generated Azazel graph. Full-project parity is not claimed from a
 successful slice.
 
-See [`HUGE_PROJECT_CORPUS.md`](HUGE_PROJECT_CORPUS.md) for the detailed matrix.
+A corpus repo can declare target slices, such as `samples/minimal_*` for
+zig-gamedev and `port/*/*` for MicroZig. A run builds the selected directories
+one at a time and reports the selected paths. See
+[`HUGE_PROJECT_CORPUS.md`](HUGE_PROJECT_CORPUS.md) for the detailed matrix.
 
 ## Troubleshooting
 
