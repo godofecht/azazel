@@ -528,6 +528,17 @@ class CorpusSlices(unittest.TestCase):
         found = [p.path for p in workspace.discover_packages(root / "fixture")]
         self.assertEqual(found, ["port/acme/one", "port/acme/two", "port/zeta/three"])
 
+    def test_the_overlay_records_the_resolved_selection(self) -> None:
+        root = self.ports_clone("overlay")
+        slice_ = workspace.TargetSlice("ports", ("port/*/*",), mode="package")
+        repo = self.repo((slice_,))
+        huge_corpus.write_overlay(root / "fixture", repo)
+        corpus = json.loads((root / "fixture" / ".azazel" / "corpus.json").read_text())
+        (selection,) = corpus["target_slice_selection"]
+        self.assertEqual(selection["selected_paths"], ["port/acme/one", "port/acme/two", "port/zeta/three"])
+        self.assertEqual(selection["targets"][0]["root"], "port/acme/one")
+        self.assertEqual(corpus["target_slices"][0]["patterns"], ["port/*/*"])
+
     def test_the_manifest_declares_slices(self) -> None:
         slice_ = workspace.TargetSlice("ports", ("port/*/*",), mode="package", outputs=("bin/out",))
         manifest = self.repo((slice_,)).manifest()
