@@ -17,6 +17,201 @@ fi
 
 DATA=$(cue export -e build)
 
+# Dependency options. A dependency's build function takes its options as a Zig
+# argument struct, so each `b.dependency` call has to be written out with the
+# option names and enum tags as source. This helper renders those calls; the
+# python blocks below load it from the environment.
+AZAZEL_DEPLIB=$(cat <<'PYEOF'
+import hashlib
+import json
+import re
+import sys
+
+ARG_KINDS = ('bool', 'int', 'string', 'string_list', 'enum', 'target', 'optimize')
+OPTIMIZE_MODES = ('Debug', 'ReleaseSafe', 'ReleaseFast', 'ReleaseSmall')
+TARGET_TEXT = re.compile(r'^[A-Za-z0-9_.+-]+$')
+INT_MIN, INT_MAX = -(2 ** 63), 2 ** 63 - 1
+
+
+def fail(message):
+    sys.stderr.write('gen_build_spec.sh: ' + message + chr(10))
+    sys.exit(1)
+
+
+def zig_str(text):
+    out = []
+    for byte in text.encode('utf-8'):
+        ch = chr(byte)
+        if ch == '"':
+            out.append(chr(92) + '"')
+        elif ch == chr(92):
+            out.append(chr(92) * 2)
+        elif 0x20 <= byte < 0x7f:
+            out.append(ch)
+        else:
+            out.append(chr(92) + 'x%02x' % byte)
+    return '"' + ''.join(out) + '"'
+
+
+def zig_name(text):
+    return '@' + zig_str(text)
+
+
+def type_name(value):
+    if isinstance(value, bool):
+        return 'a bool'
+    if isinstance(value, int):
+        return 'an integer'
+    if isinstance(value, str):
+        return 'a string'
+    if isinstance(value, list):
+        return 'a list'
+    return 'a ' + type(value).__name__
+
+
+def validate_arg(owner, arg):
+    name = arg.get('name')
+    if not isinstance(name, str) or not name:
+        fail(owner + ': a dependency option needs a non-empty name')
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in name):
+        fail(owner + ': option ' + json.dumps(name) + ' has a control character in its name')
+    where = owner + ': option ' + json.dumps(name)
+    kind = arg.get('kind')
+    if kind not in ARG_KINDS:
+        fail(where + ' has kind ' + json.dumps(kind) + '; the supported kinds are ' + ', '.join(ARG_KINDS))
+    value = arg.get('value')
+    if kind in ('target', 'optimize') and value is None:
+        value = 'forward'
+    if kind == 'bool' and not isinstance(value, bool):
+        fail(where + ' is a bool and was given ' + type_name(value) + ' ' + json.dumps(value))
+    if kind == 'int':
+        if isinstance(value, bool) or not isinstance(value, int):
+            fail(where + ' is an int and was given ' + type_name(value) + ' ' + json.dumps(value))
+        if not INT_MIN <= value <= INT_MAX:
+            fail(where + ' is an int outside the 64-bit range: ' + str(value))
+    if kind == 'string' and not isinstance(value, str):
+        fail(where + ' is a string and was given ' + type_name(value) + ' ' + json.dumps(value))
+    if kind == 'string_list' and not (isinstance(value, list) and all(isinstance(i, str) for i in value)):
+        fail(where + ' is a string_list and needs a list of strings; it was given ' + type_name(value) + ' ' + json.dumps(value))
+    if kind == 'enum':
+        if not isinstance(value, str) or not value:
+            fail(where + ' is an enum and needs a non-empty tag name; it was given ' + type_name(value) + ' ' + json.dumps(value))
+        if any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value):
+            fail(where + ' has a control character in its enum tag')
+    if kind == 'target' and not (isinstance(value, str) and (value == 'forward' or TARGET_TEXT.match(value))):
+        fail(where + ' is a target and needs "forward" or a target triple such as "x86_64-linux-gnu"; it was given ' + json.dumps(value))
+    if kind == 'optimize' and not (value == 'forward' or value in OPTIMIZE_MODES):
+        fail(where + ' is an optimize mode and needs "forward" or one of ' + ', '.join(OPTIMIZE_MODES) + '; it was given ' + json.dumps(value))
+    return {'name': name, 'kind': kind, 'value': value}
+
+
+def effective_args(owner, item):
+    """The options a dependency call passes: forwarded target and optimize, then the declared args."""
+    args = []
+    if item.get('pass_target', True):
+        args.append({'name': 'target', 'kind': 'target', 'value': 'forward'})
+    if item.get('pass_optimize', True):
+        args.append({'name': 'optimize', 'kind': 'optimize', 'value': 'forward'})
+    args.extend(item.get('args') or [])
+    seen = set()
+    result = []
+    for arg in args:
+        arg = validate_arg(owner, arg)
+        if arg['name'] in seen:
+            hint = ''
+            if arg['name'] in ('target', 'optimize'):
+                hint = '; set pass_' + arg['name'] + ': false to give it your own value'
+            fail(owner + ': option ' + json.dumps(arg['name']) + ' is passed twice' + hint)
+        seen.add(arg['name'])
+        result.append(arg)
+    return result
+
+
+def arg_expr(arg):
+    kind, value = arg['kind'], arg['value']
+    if kind == 'bool':
+        return 'true' if value else 'false'
+    if kind == 'int':
+        return str(value)
+    if kind == 'string':
+        return '@as([]const u8, ' + zig_str(value) + ')'
+    if kind == 'string_list':
+        body = '&.{ ' + ', '.join(zig_str(i) for i in value) + ' }' if value else '&.{}'
+        return '@as([]const []const u8, ' + body + ')'
+    if kind == 'enum':
+        return '.' + zig_name(value)
+    if kind == 'target':
+        if value == 'forward':
+            return 'target'
+        return 'b.resolveTargetQuery(std.Target.Query.parse(.{ .arch_os_abi = ' + zig_str(value) + ' }) catch @panic(' + zig_str('invalid target ' + value) + '))'
+    return 'optimize' if value == 'forward' else '@as(std.builtin.OptimizeMode, .' + value + ')'
+
+
+def args_literal(args):
+    if not args:
+        return '&.{}'
+    parts = []
+    for arg in args:
+        kind, value = arg['kind'], arg['value']
+        if kind == 'string_list':
+            text, items = '', zig_string_items(value)
+        elif kind == 'bool':
+            text, items = ('true' if value else 'false'), '&.{}'
+        else:
+            text, items = str(value), '&.{}'
+        parts.append('.{ .name = ' + zig_str(arg['name']) + ', .kind = .' + (zig_name(kind) if kind == 'enum' else kind)
+                     + ', .value = ' + zig_str(text) + ', .items = ' + items + ' }')
+    return '&.{ ' + ', '.join(parts) + ' }'
+
+
+def zig_string_items(items):
+    return '&.{ ' + ', '.join(zig_str(i) for i in items) + ' }' if items else '&.{}'
+
+
+def use_of(data, owner, package, item):
+    """The call a package use resolves to: its function name and the data behind it."""
+    lazy = bool((data.get('packages', {}).get(package) or {}).get('lazy', False))
+    args = effective_args(owner, item)
+    key = hashlib.sha1(json.dumps([package, lazy, args], sort_keys=True).encode('utf-8')).hexdigest()[:12]
+    return {'id': 'dep_' + key, 'package': package, 'lazy': lazy, 'args': args}
+
+
+def all_uses(data):
+    """Every distinct dependency call in the project, in first-use order."""
+    uses = {}
+    for mod_name, mod in data['modules'].items():
+        for item in mod.get('pkg_imports', []):
+            use = use_of(data, 'module ' + mod_name + ' imports package ' + item['package'], item['package'], item)
+            uses.setdefault(use['id'], use)
+        for item in mod.get('pkg_artifacts', []):
+            use = use_of(data, 'module ' + mod_name + ' links package ' + item['package'], item['package'], item)
+            uses.setdefault(use['id'], use)
+    for gen_name, gen in data.get('generated', {}).items():
+        pkg = gen.get('package')
+        if pkg:
+            use = use_of(data, 'generated ' + gen_name + ' reads package ' + pkg['package'], pkg['package'], pkg)
+            uses.setdefault(use['id'], use)
+    return list(uses.values())
+
+
+def call_function(use):
+    args = use['args']
+    uses_target = any(a['kind'] == 'target' and a['value'] == 'forward' for a in args)
+    uses_optimize = any(a['kind'] == 'optimize' and a['value'] == 'forward' for a in args)
+    lines = ['fn ' + use['id'] + '(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) ?*std.Build.Dependency {']
+    if not uses_target:
+        lines.append('    _ = target;')
+    if not uses_optimize:
+        lines.append('    _ = optimize;')
+    fields = ', '.join('.' + zig_name(a['name']) + ' = ' + arg_expr(a) for a in args)
+    call = 'b.lazyDependency' if use['lazy'] else 'b.dependency'
+    lines.append('    return ' + call + '(' + zig_str(use['package']) + ', .{ ' + fields + ' });' if fields else '    return ' + call + '(' + zig_str(use['package']) + ', .{});')
+    lines.append('}')
+    return chr(10).join(lines)
+PYEOF
+)
+export AZAZEL_DEPLIB
+
 cat > build_spec.zig <<'HEADER'
 const std = @import("std");
 
@@ -73,22 +268,40 @@ pub const SystemDep = struct {
     hint: []const u8,
 };
 
+pub const DepArgKind = enum { bool, int, string, string_list, @"enum", target, optimize };
+
+/// One option passed to a dependency's build function. `value` holds the bool,
+/// integer, string, enum tag, target or optimize setting as text, and `items`
+/// holds a string list. A `target` or `optimize` value of "forward" passes the
+/// consuming module's own setting.
+pub const DepArg = struct {
+    name: []const u8,
+    kind: DepArgKind,
+    value: []const u8,
+    items: []const []const u8,
+};
+
+/// Resolves a dependency with its options written as a Zig argument struct, so
+/// each option name and enum tag is checked by the compiler against the call.
+pub const DependencyCall = *const fn (
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) ?*std.Build.Dependency;
+
 pub const PackageImport = struct {
     alias: []const u8,
     package: []const u8,
     module: []const u8,
-    pass_target: bool,
-    pass_optimize: bool,
-    backend: ?[]const u8,
-    fields: []const []const u8,
+    args: []const DepArg,
+    call: DependencyCall,
 };
 
 pub const PackageArtifact = struct {
     package: []const u8,
     artifact: []const u8,
-    pass_target: bool,
-    pass_optimize: bool,
-    backend: ?[]const u8,
+    args: []const DepArg,
+    call: DependencyCall,
 };
 
 pub const OptionValue = struct {
@@ -292,7 +505,8 @@ print()
 " >> build_spec.zig
 
 echo "$DATA" | python3 -c "
-import json, sys
+import json, os, sys
+exec(os.environ['AZAZEL_DEPLIB'])
 
 def zig_string(s):
     return json.dumps(s)
@@ -342,13 +556,12 @@ for name, g in data.get('generated', {}).items():
     tool = g.get('tool') or {}
     pkg = g.get('package')
     if pkg:
+        use = use_of(data, 'generated ' + name + ' reads package ' + pkg['package'], pkg['package'], pkg)
         pkg_str = ('.{ .alias = ' + zig_string(name)
                    + ', .package = ' + zig_string(pkg['package'])
                    + ', .module = ' + zig_string('')
-                   + ', .pass_target = ' + zig_bool(pkg.get('pass_target', True))
-                   + ', .pass_optimize = ' + zig_bool(pkg.get('pass_optimize', True))
-                   + ', .backend = ' + zig_optional_string(pkg.get('backend'))
-                   + ', .fields = ' + zig_string_list(pkg.get('fields', []))
+                   + ', .args = ' + args_literal(use['args'])
+                   + ', .call = ' + use['id']
                    + ' }')
     else:
         pkg_str = 'null'
@@ -388,7 +601,8 @@ for mod_name, m in data['modules'].items():
 printf 'pub const modules = [_]Module{\n' >> build_spec.zig
 
 echo "$DATA" | python3 -c "
-import json, sys
+import json, os, sys
+exec(os.environ['AZAZEL_DEPLIB'])
 
 def zig_string(s):
     return json.dumps(s)
@@ -436,34 +650,33 @@ def zig_pkg_library_paths(items):
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
 
-def zig_pkg_imports(items):
+def zig_pkg_imports(mod_name, items):
     if not items:
         return '&.{}'
     rendered = []
     for item in items:
+        use = use_of(data, 'module ' + mod_name + ' imports package ' + item['package'], item['package'], item)
         rendered.append(
             '.{ .alias = ' + zig_string(item['alias'])
             + ', .package = ' + zig_string(item['package'])
             + ', .module = ' + zig_string(item['module'])
-            + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
-            + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
-            + ', .backend = ' + zig_optional_string(item.get('backend'))
-            + ', .fields = ' + zig_string_list(item.get('fields', []))
+            + ', .args = ' + args_literal(use['args'])
+            + ', .call = ' + use['id']
             + ' }'
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
 
-def zig_pkg_artifacts(items):
+def zig_pkg_artifacts(mod_name, items):
     if not items:
         return '&.{}'
     rendered = []
     for item in items:
+        use = use_of(data, 'module ' + mod_name + ' links package ' + item['package'], item['package'], item)
         rendered.append(
             '.{ .package = ' + zig_string(item['package'])
             + ', .artifact = ' + zig_string(item['artifact'])
-            + ', .pass_target = ' + zig_bool(item.get('pass_target', True))
-            + ', .pass_optimize = ' + zig_bool(item.get('pass_optimize', True))
-            + ', .backend = ' + zig_optional_string(item.get('backend'))
+            + ', .args = ' + args_literal(use['args'])
+            + ', .call = ' + use['id']
             + ' }'
         )
     return '&.{ ' + ', '.join(rendered) + ' }'
@@ -565,8 +778,8 @@ for name, m in mods.items():
     post_str = zig_commands(m.get('post', []))
     install_dirs_str = zig_install_dirs(m.get('install_dirs', []))
     pkg_library_paths_str = zig_pkg_library_paths(m.get('pkg_library_paths', []))
-    pkg_imports_str = zig_pkg_imports(m.get('pkg_imports', []))
-    pkg_artifacts_str = zig_pkg_artifacts(m.get('pkg_artifacts', []))
+    pkg_imports_str = zig_pkg_imports(name, m.get('pkg_imports', []))
+    pkg_artifacts_str = zig_pkg_artifacts(name, m.get('pkg_artifacts', []))
     build_options_str = zig_string_list(m.get('build_options', []))
     option_values_str = zig_option_values(m.get('option_values', []))
     gen_imports_str = zig_gen_imports(m.get('gen_imports', []))
@@ -596,6 +809,18 @@ for name, m in mods.items():
 " >> build_spec.zig
 
 printf '};\n' >> build_spec.zig
+
+# One function per distinct dependency call, with the options written out as a
+# Zig argument struct.
+echo "$DATA" | python3 -c "
+import json, os, sys
+exec(os.environ['AZAZEL_DEPLIB'])
+
+data = json.load(sys.stdin)
+for use in all_uses(data):
+    print()
+    print(call_function(use))
+" >> build_spec.zig
 
 echo "Generated build_spec.zig"
 

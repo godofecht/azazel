@@ -180,11 +180,15 @@ The first executable slices are:
   path dependencies in the parity workspace
 - `artifact:zmesh:zmesh` and `artifact:znoise:FastNoiseLite` link additional
   exported native package artifacts
-- `package:zgui` is wired through a local path dependency with
-  `backend: "glfw_wgpu"`
+- `package:zgui` is wired through a local path dependency with the typed options
+  `{name: "backend", kind: "enum", value: "glfw_wgpu"}` and
+  `{name: "with_implot", kind: "bool", value: true}`, the two upstream's
+  `frame_pacing_wgpu` sample passes
 - `artifact:zgui:imgui` links the backend-selected ImGui artifact
 - `package:zgpu` and `artifact:zgpu:zdawn` cover the WGPU sample package and
-  native Dawn wrapper surface
+  native Dawn wrapper surface. The slice also passes zgpu's integer options
+  `uniforms_buffer_size` and `buffer_pool_size` and its bool
+  `dawn_skip_validation`, set to zgpu's defaults, through the same `args`
 - `package-library-path:dawn_aarch64_macos` adds the real Dawn prebuilt package
   library search path for macOS arm64 parity
 - `asset:sdl2_demo_content` stages the real
@@ -293,7 +297,7 @@ For libvaxis the generated file is uucode's Unicode table module. Upstream's
 
 ```cue
 generated: unicode_tables: {
-    package: {package: "uucode", named_path: "tables.zig", fields: _unicode_fields}
+    package: {package: "uucode", named_path: "tables.zig", args: _uucode_args}
     outputs: [{name: "tables.zig", install: "share/vaxis/unicode_tables.zig"}]
 }
 ```
@@ -356,8 +360,8 @@ Current executable Azazel parity slices:
 | Project | Slice | Result | Boundary |
 | --- | --- | --- | --- |
 | `libxev` | `module:xev` plus `exe:xev_probe` | `ok` on Zig `0.16.0` | Proves import-mode module compilation through Azazel; full install graph is still future work. |
-| `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode`, `package-option:uucode:fields`, `generated:unicode_tables:tables.zig` | `ok` on Zig `0.16.0`, checked 2026-11-18 | The slice passes upstream's uucode `fields`, so `uucode_generate` runs. Its `tables.zig` output is declared under `generated`, installed, embedded by the probe, and checked on disk by the runner. Examples, tests and installable demos are still future work. |
-| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `package:zgpu`, `artifact:zgpu:zdawn`, `package-library-path:dawn_aarch64_macos`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact and `zgpu`'s Dawn wrapper, package prebuilt library paths, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
+| `libvaxis` | `module:vaxis`, `exe:vaxis_probe`, `package:zigimg`, `package:uucode`, `package-option:uucode:fields`, `generated:unicode_tables:tables.zig` | `ok` on Zig `0.16.0`, checked 2026-11-18 | The slice passes upstream's uucode `fields` as a `string_list` arg, so `uucode_generate` runs. Its `tables.zig` output is declared under `generated`, installed, embedded by the probe, and checked on disk by the runner. Examples, tests and installable demos are still future work. |
+| `zig-gamedev` | `module:zig_gamedev_vectormath`, `exe:zig_gamedev_vectormath_probe`, `package:zmath`, `package:zopengl`, `package:zglfw`, `artifact:zglfw:glfw`, `package:zmesh`, `artifact:zmesh:zmesh`, `package:znoise`, `artifact:znoise:FastNoiseLite`, `package:zgui`, `artifact:zgui:imgui`, `package-option:zgui:backend=glfw_wgpu`, `package-option:zgui:with_implot=true`, `package:zgpu`, `package-option:zgpu:buffer_pool_size=256`, `artifact:zgpu:zdawn`, `package-library-path:dawn_aarch64_macos`, `asset:sdl2_demo_content` | `ok` on Zig `0.15.2` | Proves a shared sample module, real Zig package dependencies, package-specific option forwarding, multiple native package artifact links including `zgui`'s backend-selected ImGui artifact and `zgpu`'s Dawn wrapper, package prebuilt library paths, and runtime asset staging can compile/install through Azazel; SDL/D3D/WebGPU full example selection is still future work. |
 
 ## Stable Lanes and Project-Required Toolchains
 
@@ -499,7 +503,7 @@ command?" without cloning or compiling. Useful statuses:
 ## Azazel Gaps Exposed
 
 - Toolchain constraints: lane support exists for `0.14`, `0.15`, and `0.16`; corpus manifests now declare exact, dev-window and custom toolchains. `project.cue` itself still declares lanes only.
-- Package dependencies: package module imports exist, the libvaxis slice imports url and hash dependencies read from upstream's `build.zig.zon`, lazy packages resolve through `lazyDependency`, and `--build` names the dependency behind a fetch or format failure. Dependency build options are still a fixed set (`backend`, `fields`), and the manifests of fetched packages are not read before a build.
+- Package dependencies: package module imports exist, the libvaxis slice imports url and hash dependencies read from upstream's `build.zig.zon`, lazy packages resolve through `lazyDependency`, and `--build` names the dependency behind a fetch or format failure. Dependency build options are typed `args` (bool, int, string, string_list, enum, target and optimize), compared with the dependency's own `build.zig` when it is on disk. The manifests of fetched packages are not read before a build.
 - Named modules without artifacts: `kind: "module"` now represents `b.addModule` and pure module imports.
 - Build options: typed booleans, strings, and `u32` defaults now exist; enums/lists still need modeling.
 - Generated sources: top-level `generated` steps track run-artifact, command and package outputs, and modules consume them as imports, embedded files, C sources or include paths. Generated directories and generators that import other modules are not modeled yet.

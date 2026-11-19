@@ -126,7 +126,7 @@ Top-level `options` declare project options. A module lists option names in
     module: string
     pass_target: bool | *true
     pass_optimize: bool | *true
-    backend?: string
+    args: [...#DepArg] | *[]
 }
 
 #PackageArtifact: {
@@ -134,8 +134,13 @@ Top-level `options` declare project options. A module lists option names in
     artifact: string
     pass_target: bool | *true
     pass_optimize: bool | *true
-    backend?: string
+    args: [...#DepArg] | *[]
 }
+
+// One of #BoolArg, #IntArg, #StringArg, #StringListArg, #EnumArg,
+// #TargetArg or #OptimizeArg. Each has `name`, `kind`, `value` and an
+// optional `unchecked`.
+#DepArg: {name: string, kind: string, value: _, unchecked: bool | *false}
 ```
 
 `install_dirs` stage asset/content directories with `b.addInstallDirectory`.
@@ -159,9 +164,11 @@ do not declare those dependency options.
 They use the same dependency option forwarding controls, then map to
 `root_module.linkLibrary(dep.artifact(artifact))`.
 
-Set `backend` on a package import or artifact when the dependency exposes a
-`backend` enum option, for example `backend: "glfw_wgpu"` for `zgui`. Azazel
-passes it as `.backend = .glfw_wgpu` on the generated `b.dependency` call.
+Set `args` on a package import or artifact to pass the dependency's own
+options, for example `{name: "backend", kind: "enum", value: "glfw_wgpu"}` for
+`zgui`. Azazel writes each one into the generated `b.dependency` call as
+`.backend = .glfw_wgpu`. See "Dependency options" in `docs/WIKI.md` for the
+kinds and the checks.
 
 ## Native Metadata
 

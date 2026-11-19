@@ -34,19 +34,86 @@ package build
 	arch?: string
 }
 
+// One option passed to a dependency's build function, the way a `b.dependency`
+// call writes it: `.name = value`. The kind says which Zig type the value takes,
+// and CUE rejects a value of any other type.
+//
+//   bool         true or false
+//   int          a 64-bit integer, for options such as `u32` and `usize`
+//   string       a `[]const u8` option
+//   string_list  a `[]const []const u8` option
+//   enum         a tag of the option's enum type, written as a bare name
+//   target       "forward" passes the consuming module's target; a triple such
+//                as "aarch64-linux-gnu" passes that target
+//   optimize     "forward" passes the module's optimize mode; or a mode name
+//
+// `name` is the option's name in the dependency's build.zig, for example the
+// "backend" of `b.option(Backend, "backend", ...)`. `azazel check` compares it
+// with the options that build.zig declares, when the dependency is on disk.
+#DepArg: #BoolArg | #IntArg | #StringArg | #StringListArg | #EnumArg | #TargetArg | #OptimizeArg
+
+// The parts every option shares. `unchecked` skips the comparison of this
+// option with the dependency's own build.zig, for a dependency that declares
+// the option somewhere `azazel check` cannot see.
+#ArgBase: {
+	name:      string & !=""
+	unchecked: bool | *false
+}
+
+#BoolArg: {
+	#ArgBase
+	kind:  "bool"
+	value: bool
+}
+
+#IntArg: {
+	#ArgBase
+	kind:  "int"
+	value: int & >=-9223372036854775808 & <=9223372036854775807
+}
+
+#StringArg: {
+	#ArgBase
+	kind:  "string"
+	value: string
+}
+
+#StringListArg: {
+	#ArgBase
+	kind:  "string_list"
+	value: [...string]
+}
+
+#EnumArg: {
+	#ArgBase
+	kind:  "enum"
+	value: string & !=""
+}
+
+#TargetArg: {
+	#ArgBase
+	kind:  "target"
+	value: *"forward" | (string & =~"^[A-Za-z0-9_.+-]+$")
+}
+
+#OptimizeArg: {
+	#ArgBase
+	kind:  "optimize"
+	value: *"forward" | "Debug" | "ReleaseSafe" | "ReleaseFast" | "ReleaseSmall"
+}
+
 #PackageImport: {
 	alias:   string
 	package: string
 	module:  string
+
+	// Forward the module's target and optimize mode as the options named
+	// `target` and `optimize`. Turn one off to pass your own through `args`.
 	pass_target: bool | *true
 	pass_optimize: bool | *true
-	backend?: string
 
-	// A `fields` string-list option passed to the dependency, for packages
-	// that select which data tables to compile in (e.g. uucode's Unicode
-	// property fields). Emitted as `.fields = @as([]const []const u8, ...)`
-	// only when non-empty, so ordinary imports are unaffected.
-	fields: [...string] | *[]
+	// Other options for the dependency's build function.
+	args: [...#DepArg] | *[]
 }
 
 #PackageArtifact: {
@@ -54,7 +121,7 @@ package build
 	artifact: string
 	pass_target: bool | *true
 	pass_optimize: bool | *true
-	backend?: string
+	args: [...#DepArg] | *[]
 }
 
 // A literal, typed value injected into a module's build-options module (the
@@ -136,8 +203,7 @@ package build
 		named_path: string
 		pass_target:   bool | *true
 		pass_optimize: bool | *true
-		backend?: string
-		fields: [...string] | *[]
+		args: [...#DepArg] | *[]
 
 		// Must match the optimize mode of the module that imports the same
 		// package, so both resolve to one dependency instance.

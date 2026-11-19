@@ -1,6 +1,6 @@
 # Project File
 
-`project.cue` is the only file you edit. It declares your modules — what to build, from what source, with what dependencies.
+`project.cue` is the only file you edit. It declares your modules: what to build, from what source, with what dependencies.
 
 ## Structure
 
@@ -8,8 +8,8 @@ Every module is a `#Module` with these fields:
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `kind` | `"exe"` `"static"` `"shared"` `"module"` | yes | — | Output type |
-| `root` | `string` | yes | — | Root source file path |
+| `kind` | `"exe"` `"static"` `"shared"` `"module"` | yes | none | Output type |
+| `root` | `string` | yes | none | Root source file path |
 | `deps` | `[...string]` | no | `[]` | Names of modules this depends on |
 | `profile` | `"debug"` `"release"` | no | `"debug"` | Optimization profile |
 | `link` | `"abi"` `"import"` | no | `"abi"` | Whether dependents link or import this module |
@@ -85,9 +85,25 @@ module.addImport("known-folders", dep.module("known-folders"));
 
 Set `pass_target: false` or `pass_optimize: false` on a `pkg_imports` entry
 when the package build script does not declare those dependency options.
-Set `backend: "glfw_wgpu"` when a package dependency exposes a `backend`
-enum option and must be selected at dependency time. Azazel passes the same
-backend value to package imports and package artifacts.
+Pass any other option of the dependency's build function through `args`. Each
+entry has a `name`, a `kind` and a `value`:
+
+```cue
+pkg_imports: [{
+    alias: "zgui"
+    package: "zgui"
+    module: "root"
+    args: [
+        {name: "backend", kind: "enum", value: "glfw_wgpu"},
+        {name: "with_implot", kind: "bool", value: true},
+    ]
+}]
+```
+
+That maps to `b.dependency("zgui", .{ .target = target, .optimize = optimize,
+.backend = .glfw_wgpu, .with_implot = true })`. The kinds are `bool`, `int`,
+`string`, `string_list`, `enum`, `target` and `optimize`. See "Dependency
+options" in `docs/WIKI.md`.
 
 Use `pkg_artifacts` when the module must link a compiled artifact exported by a
 package dependency:
@@ -112,20 +128,13 @@ module.linkLibrary(dep.artifact("glfw"));
 ```
 
 For packages such as `zgui` that export both a module and a native artifact,
-put the same `backend` value on both entries:
+give both entries the same `args`. Identical options resolve to one dependency:
 
 ```cue
-pkg_imports: [{
-    alias: "zgui"
-    package: "zgui"
-    module: "root"
-    backend: "glfw_wgpu"
-}]
-pkg_artifacts: [{
-    package: "zgui"
-    artifact: "imgui"
-    backend: "glfw_wgpu"
-}]
+_zgui_args: [{name: "backend", kind: "enum", value: "glfw_wgpu"}]
+
+pkg_imports: [{alias: "zgui", package: "zgui", module: "root", args: _zgui_args}]
+pkg_artifacts: [{package: "zgui", artifact: "imgui", args: _zgui_args}]
 ```
 
 Use `pkg_library_paths` when a package helper normally adds a prebuilt library
