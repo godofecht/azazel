@@ -23,6 +23,16 @@ generated: build_info: {
 	outputs: [{name: "build_info.zig"}]
 }
 
+// Nested packages. The danzig core and each example have their own directory.
+// A build can name a slice of them: `azazel build --slice 'examples/*'`, or
+// `azazel build --subproject danzig_gain`. Example artifacts install under
+// their own output directory.
+subprojects: {
+	danzig: {path: "src/danzig", description: "the vendored danzig audio core"}
+	danzig_gain: {path: "examples/danzig-gain", output_dir: "examples/danzig-gain", description: "a gain plugin built on danzig"}
+	danzig_test: {path: "examples/danzig-test", output_dir: "examples/danzig-test", description: "a test host for danzig"}
+}
+
 core: #Module & {
 	kind: "module"
 	root: "src/core.zig"
@@ -47,17 +57,20 @@ app: #Module & {
 
 danzig: #Module & {
 	kind: "static"
+	subproject: "danzig"
 	root: "src/danzig/root.zig"
 }
 
 danzig_gain: #Module & {
 	kind: "shared"
+	subproject: "danzig_gain"
 	root: "examples/danzig-gain/root.zig"
 	deps: ["danzig"]
 }
 
 danzig_test: #Module & {
 	kind: "exe"
+	subproject: "danzig_test"
 	root: "examples/danzig-test/root.zig"
 	deps: ["danzig"]
 }

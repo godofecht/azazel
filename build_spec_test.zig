@@ -451,3 +451,45 @@ test "module-only targets are import edges" {
         }
     }
 }
+
+fn subprojectNamed(name: []const u8) ?spec.Subproject {
+    for (spec.subprojects) |sub| {
+        if (std.mem.eql(u8, sub.name, name)) return sub;
+    }
+    return null;
+}
+
+test "subproject names and paths are unique and well-formed" {
+    for (spec.subprojects, 0..) |sub, i| {
+        try testing.expect(sub.name.len > 0);
+        try testing.expect(sub.path.len > 0);
+        try testing.expect(sub.path[0] != '/');
+        try testing.expect(sub.path[sub.path.len - 1] != '/');
+        try testing.expect(std.mem.indexOf(u8, sub.path, "..") == null);
+        try testing.expect(std.mem.indexOf(u8, sub.output_dir, "..") == null);
+        try testing.expect(sub.output_dir.len == 0 or sub.output_dir[0] != '/');
+        try testing.expect(compat.exists(compat.io(), sub.path));
+        for (spec.subprojects[i + 1 ..]) |other| {
+            try testing.expect(!std.mem.eql(u8, sub.name, other.name));
+            try testing.expect(!std.mem.eql(u8, sub.path, other.path));
+        }
+    }
+}
+
+test "every module's subproject is declared and contains its root" {
+    for (spec.modules) |m| {
+        if (m.subproject.len == 0) continue;
+        const sub = subprojectNamed(m.subproject) orelse return error.UnknownSubproject;
+        try testing.expect(std.mem.startsWith(u8, m.root, sub.path));
+        try testing.expect(m.root.len > sub.path.len and m.root[sub.path.len] == '/');
+    }
+}
+
+test "the danzig examples are nested subprojects with their own output directory" {
+    const gain = subprojectNamed("danzig_gain") orelse return error.MissingSubproject;
+    try testing.expectEqualStrings("examples/danzig-gain", gain.path);
+    try testing.expectEqualStrings("examples/danzig-gain", gain.output_dir);
+    const core = subprojectNamed("danzig") orelse return error.MissingSubproject;
+    try testing.expectEqualStrings("src/danzig", core.path);
+    try testing.expectEqualStrings("", core.output_dir);
+}

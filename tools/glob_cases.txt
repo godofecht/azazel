@@ -1,0 +1,35 @@
+# pattern<TAB>text<TAB>match|nomatch
+# Shared by compat.zig and tools/test_workspace.py so both matchers agree.
+samples/minimal_*	samples/minimal_glfw_gl	match
+samples/minimal_*	samples/minimal_	match
+samples/minimal_*	samples/minimal_glfw_gl/src	nomatch
+samples/minimal_*	samples/triangle	nomatch
+samples/*	samples/triangle	match
+samples/*	samples	nomatch
+samples/**	samples/triangle/src/main.zig	match
+samples/**	samples/	match
+samples/**	samples	nomatch
+**/build	build	match
+**/build	a/b/build	match
+**/build	a/b/rebuild	nomatch
+a/**/b	a/b	match
+a/**/b	a/x/y/b	match
+a/**/b	a/xb	nomatch
+port/*/*	port/raspberrypi/rp2xxx	match
+port/*/*	port/raspberrypi	nomatch
+port/*/*	port/a/b/c	nomatch
+port/*	port/raspberrypi/rp2xxx	nomatch
+a?c	abc	match
+a?c	a/c	nomatch
+a?c	ac	nomatch
+*	anything	match
+*	a/b	nomatch
+**	a/b/c	match
+exact/path	exact/path	match
+exact/path	exact/path2	nomatch
+exact/path	exact	nomatch
+*_wgpu	triangle_wgpu	match
+*_wgpu	triangle_wgpu_x	nomatch
+*mid*dle*	a_middle_b	match
+a.b	axb	nomatch
+a[b]	a[b]	match

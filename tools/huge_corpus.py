@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import corpus_deps
+import corpus_slices
+import workspace
 import zig_toolchain
 import zon
 from zig_toolchain import ToolchainSpec
@@ -112,6 +114,10 @@ class Repo:
     # read as one exact release. This is separate from the Azazel generator
     # lanes written into the overlay project.cue.
     toolchain: ToolchainSpec | None = None
+    # Nested packages or sample directories a build can be limited to. A repo
+    # that declares slices is built slice by slice, so a run does not compile
+    # every sample. `--whole-repo` runs `build_command` instead.
+    target_slices: tuple[workspace.TargetSlice, ...] = ()
 
     @property
     def required_tools(self) -> tuple[str, ...]:
@@ -154,6 +160,7 @@ class Repo:
             "executable_parity_targets": list(self.executable_parity_targets),
             "executable_parity_install_checks": list(self.executable_parity_install_checks),
             "executable_parity_generated_outputs": list(self.executable_parity_generated_outputs),
+            "target_slices": [item.manifest() for item in self.target_slices],
         }
 
 
@@ -269,6 +276,22 @@ REPOS = [
         "zig-toolchain",
         ("workspace packages", "board ports", "nested build packages", "tools"),
         replacement_gaps=("nested workspaces", "dependency archive handling", "embedded target slices"),
+        target_slices=(
+            workspace.TargetSlice(
+                "ports",
+                ("port/*/*",),
+                mode="package",
+                description="each chip port is a nested build package under port/<vendor>/<chip>",
+                expected_classification="unverified",
+            ),
+            workspace.TargetSlice(
+                "example-boards",
+                ("examples/*/*",),
+                mode="package",
+                description="each vendor example directory is a nested build package",
+                expected_classification="unverified",
+            ),
+        ),
     ),
     Repo(
         "libvaxis",
@@ -353,6 +376,15 @@ REPOS = [
         executable_parity_install_checks=(
             ".azazel-install/bin/sdl2_demo_content/zero.png",
         ),
+        target_slices=(
+            workspace.TargetSlice(
+                "minimal-samples",
+                ("samples/minimal_*",),
+                mode="steps",
+                outputs=("bin/{name}",),
+                description="the minimal samples, each built through its own step",
+            ),
+        ),
     ),
     Repo(
         "tigerbeetle",
@@ -411,6 +443,45 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproce
 
 def repo_dir(root: Path, repo: Repo) -> Path:
     return root / repo.name
+
+
+# Set by --slice, --target-path and --whole-repo.
+REQUESTED_SLICES: tuple[str, ...] = ()
+NARROW_PATHS: tuple[str, ...] = ()
+WHOLE_REPO = False
+
+
+def active_slices(repo: Repo) -> tuple[workspace.TargetSlice, ...]:
+    """The slices a run builds for a repo.
+
+    With no `--slice`, every declared slice. With `--slice NAME`, the named
+    ones. `--whole-repo` selects none, so `build_command` runs as before.
+    """
+    if WHOLE_REPO:
+        return ()
+    if not REQUESTED_SLICES:
+        return repo.target_slices
+    return tuple(item for item in repo.target_slices if item.name in REQUESTED_SLICES)
+
+
+def slice_selections(
+    repo: Repo, path: Path, known_steps: set[str] | None = None
+) -> list[workspace.SliceSelection]:
+    selections = [
+        workspace.resolve_slice(path, item, NARROW_PATHS, known_steps)
+        for item in active_slices(repo)
+    ]
+    # `--target-path` narrows every slice. A slice it leaves empty is not part
+    # of the run, unless it leaves all of them empty.
+    if NARROW_PATHS:
+        reached = [selection for selection in selections if selection.targets]
+        if reached:
+            return reached
+    return selections
+
+
+def selected_paths(selections: list[workspace.SliceSelection]) -> list[str]:
+    return [target.path for selection in selections for target in selection.selected]
 
 
 # Set by --fetch-toolchains. Resolution stays offline unless it is on.
@@ -491,6 +562,11 @@ def write_overlay(path: Path, repo: Repo) -> None:
     # explains each dependency without a reader opening the upstream scripts.
     dependencies = corpus_deps.describe(path)
     manifest["dependencies"] = dependencies
+    # Where each declared slice lands in this clone: the directories it
+    # selects and their package-local roots.
+    manifest["target_slice_selection"] = [
+        workspace.resolve_slice(path, item).manifest() for item in repo.target_slices
+    ]
     (overlay / "corpus.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     (overlay / "dependencies.json").write_text(json.dumps(dependencies, indent=2) + "\n", encoding="utf-8")
     (overlay / "parity.json").write_text(
@@ -912,12 +988,14 @@ _packages: packages
 _options: options
 _system_deps: system_deps
 _generated: generated
+_subprojects: subprojects
 
 build: modules: {
     for k, v in _modules {
         (k): {
             kind: v.kind
             root: v.root
+            subproject: v.subproject
             deps: v.deps
             link: v.link
             pre: v.pre
@@ -940,6 +1018,7 @@ build: packages: _packages
 build: options: _options
 build: system_deps: _system_deps
 build: generated: _generated
+build: subprojects: _subprojects
 """,
         encoding="utf-8",
     )
@@ -1093,6 +1172,7 @@ def repo_plan_entry(repo: Repo) -> dict[str, object]:
         "required_tools": list(repo.required_tools),
         "pkg_config_libs": list(repo.pkg_config_libs),
         "replacement_gaps": list(repo.replacement_gaps),
+        "target_slices": [item.manifest() for item in repo.target_slices],
         "next_action": doctor["next_action"],
     }
 
@@ -1549,6 +1629,9 @@ def run_build(root: Path, repos: list[Repo]) -> None:
         dependencies: dict[str, object] = {}
         diagnosis: dict[str, object] | None = None
         cache_roots: dict[str, object] = {}
+        target_slice: list[dict[str, object]] = []
+        slice_expected = ""
+        slice_matches: bool | None = None
         if not zig:
             classification = resolution.status
             output = resolution.diagnostic
@@ -1575,22 +1658,61 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 "packages": portable_path(str(Path(env["ZIG_GLOBAL_CACHE_DIR"]) / "p"), root),
                 "shared_package_cache": PACKAGE_CACHE is not None,
             }
-            result = subprocess.run(
-                command,
-                cwd=path,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            returncode = result.returncode
-            # Classify and diagnose on the full text, then store a tail with
-            # the clone root replaced, so two clone roots give the same report.
-            classification = classify_failure(result.stdout, returncode)
-            if returncode != 0:
-                diagnosis = corpus_deps.diagnose(portable_text(result.stdout, root, repo), dependencies, Path("<root>") / repo.name)
-            output = portable_text(result.stdout, root, repo)[-OUTPUT_TAIL_BYTES:]
+            slices = active_slices(repo)
+            if slices:
+                # Build only what the slices select, one directory at a time.
+                hooks = corpus_slices.Hooks(
+                    classify=classify_failure,
+                    diagnose=corpus_deps.diagnose,
+                    describe=corpus_deps.describe,
+                    portable=lambda text: portable_text(text, root, repo),
+                )
+                known_steps = None
+                if any(item.mode == "steps" for item in slices):
+                    known_steps = corpus_slices.list_steps(command[:2], path, env)
+                target_slice = [
+                    corpus_slices.build_selection(
+                        selection,
+                        zig=zig,
+                        repo_path=path,
+                        env=env,
+                        hooks=hooks,
+                        expected=selection.slice.expected_classification,
+                    )
+                    for selection in slice_selections(repo, path, known_steps)
+                ]
+                failed = [item for item in target_slice if item["returncode"] != 0]
+                returncode = int(failed[0]["returncode"]) if failed else 0  # type: ignore[arg-type]
+                classification = str(failed[0]["classification"]) if failed else "ok"
+                output = "\n".join(corpus_slices.summarize(item) for item in target_slice)[-OUTPUT_TAIL_BYTES:]
+                for item in failed:
+                    for result_entry in item["results"]:  # type: ignore[union-attr]
+                        if result_entry["dependency_diagnosis"] is not None:
+                            diagnosis = result_entry["dependency_diagnosis"]
+                            break
+                    if diagnosis is not None:
+                        break
+                command = [command[0], "build", "<per target>", "--summary", "all"]
+                slice_expected = ",".join(sorted({str(item["expected_classification"]) for item in target_slice}))
+                verdicts = [item["matches_expected"] for item in target_slice]
+                slice_matches = None if None in verdicts else all(verdicts)
+            else:
+                result = subprocess.run(
+                    command,
+                    cwd=path,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                )
+                returncode = result.returncode
+                # Classify and diagnose on the full text, then store a tail with
+                # the clone root replaced, so two clone roots give the same report.
+                classification = classify_failure(result.stdout, returncode)
+                if returncode != 0:
+                    diagnosis = corpus_deps.diagnose(portable_text(result.stdout, root, repo), dependencies, Path("<root>") / repo.name)
+                output = portable_text(result.stdout, root, repo)[-OUTPUT_TAIL_BYTES:]
         report.append(
             {
                 "name": repo.name,
@@ -1602,8 +1724,12 @@ def run_build(root: Path, repos: list[Repo]) -> None:
                 "toolchain": resolution.as_dict(),
                 "returncode": returncode,
                 "classification": classification,
-                "expected_classification": repo.expected_build_classification,
-                "matches_expected": expected_matches(classification, repo.expected_build_classification),
+                "expected_classification": slice_expected or repo.expected_build_classification,
+                "matches_expected": slice_matches
+                if slice_expected
+                else expected_matches(classification, repo.expected_build_classification),
+                "target_slice": target_slice,
+                "selected_target_paths": [path for item in target_slice for path in item["selected_paths"]],  # type: ignore[union-attr]
                 "integration_kind": repo.integration_kind,
                 "azazel_status": repo.parity_status,
                 "first_targets": list(repo.first_targets),
@@ -1618,8 +1744,14 @@ def run_build(root: Path, repos: list[Repo]) -> None:
         )
         print(
             f"{repo.name}: build {classification} "
-            f"(expected {repo.expected_build_classification})"
+            f"(expected {slice_expected or repo.expected_build_classification})"
         )
+        for item in target_slice:
+            chosen = ", ".join(item["selected_paths"]) or "nothing"  # type: ignore[arg-type]
+            print(f"  slice {item['slice']}: {item['classification']} for {chosen}")
+            for result_entry in item["results"]:  # type: ignore[union-attr]
+                if result_entry["returncode"] != 0:
+                    print(f"    {result_entry['path']}: {result_entry['classification']}")
         if not zig:
             print(f"  toolchain: {resolution.diagnostic}")
         elif not preflight["ready"]:
@@ -1728,6 +1860,11 @@ def parity(root: Path, repos: list[Repo]) -> None:
             },
             "parity": parity_state,
         }
+        # The directories the declared slices select, with their package-local
+        # roots. A parity run records them next to the baseline it measured.
+        selections = slice_selections(repo, path)
+        entry["target_slices"] = [selection.manifest() for selection in selections]
+        entry["selected_target_paths"] = selected_paths(selections)
         if repo.executable_parity_generated_outputs:
             # A slice that declares generated outputs is validated here: it is
             # built, and each declared file must exist afterwards.
@@ -1746,6 +1883,9 @@ def parity(root: Path, repos: list[Repo]) -> None:
             f"{repo.name}: baseline {classification} "
             f"(expected {expected}) -> parity {parity_state}"
         )
+        for selection in selections:
+            chosen = ", ".join(target.path for target in selection.selected) or "nothing"
+            print(f"  target slice {selection.slice.name}: {chosen}")
         if "generated_outputs" in entry:
             generated = entry["generated_outputs"]
             state = "validated" if generated["validated"] else f"not validated ({generated['classification']})"
@@ -1941,6 +2081,24 @@ def main() -> None:
     )
     parser.add_argument("--push", action="store_true")
     parser.add_argument(
+        "--slice",
+        action="append",
+        default=[],
+        dest="slices",
+        help="build only the named target slice of a repo; repeatable. Without it, every declared slice is built",
+    )
+    parser.add_argument(
+        "--target-path",
+        action="append",
+        default=[],
+        help="narrow the selected slices to directories matching this glob, such as 'samples/minimal_glfw_*'; repeatable",
+    )
+    parser.add_argument(
+        "--whole-repo",
+        action="store_true",
+        help="run the repo's full build command and ignore its target slices",
+    )
+    parser.add_argument(
         "--fetch-toolchains",
         action="store_true",
         help="download a required Zig toolchain that is not installed, from its index or a known mirror",
@@ -1964,7 +2122,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    global FETCH_TOOLCHAINS, PACKAGE_CACHE
+    global FETCH_TOOLCHAINS, PACKAGE_CACHE, REQUESTED_SLICES, NARROW_PATHS, WHOLE_REPO
+    REQUESTED_SLICES = tuple(args.slices)
+    NARROW_PATHS = tuple(args.target_path)
+    WHOLE_REPO = args.whole_repo
     FETCH_TOOLCHAINS = args.fetch_toolchains
     PACKAGE_CACHE = Path(args.package_cache).resolve() if args.package_cache else None
 
@@ -1973,6 +2134,12 @@ def main() -> None:
     repos = select_repos(args.repo)
     if args.expect_count is not None and len(repos) != args.expect_count:
         raise SystemExit(f"expected {args.expect_count} repos, found {len(repos)}")
+
+    declared = {item.name for repo in repos for item in repo.target_slices}
+    unknown = sorted(set(REQUESTED_SLICES) - declared)
+    if unknown:
+        known = ", ".join(sorted(declared)) or "none declared by the selected repos"
+        raise SystemExit(f"unknown target slice(s): {', '.join(unknown)}\nslices declared by the selected repos: {known}")
 
     if args.plan:
         plan(root, repos, args.expect_count)
