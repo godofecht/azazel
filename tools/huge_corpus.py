@@ -368,6 +368,8 @@ REPOS = [
             "package:zgui",
             "artifact:zgui:imgui",
             "package-option:zgui:backend=glfw_wgpu",
+            "package-option:zgui:with_implot=true",
+            "package-option:zgpu:buffer_pool_size=256",
             "package:zgpu",
             "artifact:zgpu:zdawn",
             "package-library-path:dawn_aarch64_macos",
@@ -737,13 +739,18 @@ vaxis: #Module & {
             alias: "uucode"
             package: "uucode"
             module: "uucode"
-            fields: _unicode_fields
+            args: _uucode_args
         },
     ]
 }
 
-// The Unicode property tables upstream asks uucode to build.
-_unicode_fields: ["east_asian_width", "grapheme_break", "general_category", "is_emoji_presentation"]
+// The Unicode property tables upstream asks uucode to build, as a string-list
+// option of uucode's build function.
+_uucode_args: [{
+    name: "fields"
+    kind: "string_list"
+    value: ["east_asian_width", "grapheme_break", "general_category", "is_emoji_presentation"]
+}]
 
 // uucode compiles and runs `uucode_generate`, then exports the tables it wrote
 // as the named path "tables.zig". Declaring it here makes that run-artifact
@@ -752,7 +759,7 @@ generated: unicode_tables: {
     package: {
         package: "uucode"
         named_path: "tables.zig"
-        fields: _unicode_fields
+        args: _uucode_args
     }
     outputs: [{name: "tables.zig", install: "share/vaxis/unicode_tables.zig"}]
 }
@@ -827,6 +834,22 @@ packages: {
     }
 }
 
+// Options for zgui's build function, as upstream's frame_pacing_wgpu sample
+// passes them: an enum backend and a bool. The import and the artifact take
+// the same list, so both resolve to one dependency.
+_zgui_args: [
+    {name: "backend", kind: "enum", value: "glfw_wgpu"},
+    {name: "with_implot", kind: "bool", value: true},
+]
+
+// Integer and bool options of zgpu's build function, set to zgpu's own
+// defaults. They pass through the same mechanism as any other option.
+_zgpu_args: [
+    {name: "uniforms_buffer_size", kind: "int", value: 4194304},
+    {name: "buffer_pool_size", kind: "int", value: 256},
+    {name: "dawn_skip_validation", kind: "bool", value: false},
+]
+
 zig_gamedev_vectormath: #Module & {
     kind: "module"
     root: "../../samples/common/src/vectormath.zig"
@@ -863,11 +886,12 @@ zig_gamedev_vectormath_probe: #Module & {
         alias: "zgui"
         package: "zgui"
         module: "root"
-        backend: "glfw_wgpu"
+        args: _zgui_args
     }, {
         alias: "zgpu"
         package: "zgpu"
         module: "root"
+        args: _zgpu_args
     }]
     pkg_artifacts: [{
         package: "zglfw"
@@ -882,10 +906,11 @@ zig_gamedev_vectormath_probe: #Module & {
     }, {
         package: "zgui"
         artifact: "imgui"
-        backend: "glfw_wgpu"
+        args: _zgui_args
     }, {
         package: "zgpu"
         artifact: "zdawn"
+        args: _zgpu_args
     }]
     pkg_library_paths: [{
         package: "dawn_aarch64_macos"

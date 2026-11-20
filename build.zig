@@ -313,7 +313,7 @@ fn addGenerated(b: *std.Build, target: std.Build.ResolvedTarget, paths: *Generat
                 // A lazy package is absent on the first configure pass. Stand in
                 // an empty file so the graph is complete; Zig discards this pass
                 // and configures again once the package is fetched.
-                const path = if (dependencyForImport(b, gen.package.?, target, gen.package_optimize)) |dep|
+                const path = if (gen.package.?.call(b, target, gen.package_optimize)) |dep|
                     dep.namedLazyPath(gen.named_path.?)
                 else
                     b.addWriteFiles().add(gen.outputs[0].name, "");
@@ -517,195 +517,6 @@ fn addSystemPreflight(b: *std.Build, target: std.Build.ResolvedTarget) *std.Buil
     return doctor;
 }
 
-fn packageIsLazy(name: []const u8) bool {
-    for (spec.packages) |pkg| {
-        if (std.mem.eql(u8, pkg.name, name)) return pkg.lazy;
-    }
-    return false;
-}
-
-/// Resolve a `build.zig.zon` dependency by the name declared in `packages`.
-///
-/// A package marked `lazy` goes through `lazyDependency`. That returns null
-/// until Zig has fetched it; Zig then fetches it and configures the build
-/// again, so callers skip the package on the first pass.
-fn packageDependency(b: *std.Build, package: []const u8, args: anytype) ?*std.Build.Dependency {
-    if (packageIsLazy(package)) return b.lazyDependency(package, args);
-    return b.dependency(package, args);
-}
-
-fn dependencyWithoutBackend(
-    b: *std.Build,
-    package: []const u8,
-    pass_target: bool,
-    pass_optimize: bool,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) ?*std.Build.Dependency {
-    if (pass_target and pass_optimize) {
-        return packageDependency(b, package, .{
-            .target = target,
-            .optimize = optimize,
-        });
-    }
-    if (pass_target) {
-        return packageDependency(b, package, .{
-            .target = target,
-        });
-    }
-    if (pass_optimize) {
-        return packageDependency(b, package, .{
-            .optimize = optimize,
-        });
-    }
-    return packageDependency(b, package, .{});
-}
-
-fn dependencyWithBackend(
-    b: *std.Build,
-    package: []const u8,
-    pass_target: bool,
-    pass_optimize: bool,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    comptime backend: anytype,
-) ?*std.Build.Dependency {
-    if (pass_target and pass_optimize) {
-        return packageDependency(b, package, .{
-            .target = target,
-            .optimize = optimize,
-            .backend = backend,
-        });
-    }
-    if (pass_target) {
-        return packageDependency(b, package, .{
-            .target = target,
-            .backend = backend,
-        });
-    }
-    if (pass_optimize) {
-        return packageDependency(b, package, .{
-            .optimize = optimize,
-            .backend = backend,
-        });
-    }
-    return packageDependency(b, package, .{
-        .backend = backend,
-    });
-}
-
-fn dependencyWithOptions(
-    b: *std.Build,
-    package: []const u8,
-    pass_target: bool,
-    pass_optimize: bool,
-    backend: ?[]const u8,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) ?*std.Build.Dependency {
-    const backend_name = backend orelse return dependencyWithoutBackend(b, package, pass_target, pass_optimize, target, optimize);
-
-    if (std.mem.eql(u8, backend_name, "no_backend")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .no_backend);
-    if (std.mem.eql(u8, backend_name, "glfw_wgpu")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .glfw_wgpu);
-    if (std.mem.eql(u8, backend_name, "glfw_opengl3")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .glfw_opengl3);
-    if (std.mem.eql(u8, backend_name, "glfw_vulkan")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .glfw_vulkan);
-    if (std.mem.eql(u8, backend_name, "glfw_dx12")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .glfw_dx12);
-    if (std.mem.eql(u8, backend_name, "win32_dx12")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .win32_dx12);
-    if (std.mem.eql(u8, backend_name, "glfw")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .glfw);
-    if (std.mem.eql(u8, backend_name, "sdl2_opengl3")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl2_opengl3);
-    if (std.mem.eql(u8, backend_name, "osx_metal")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .osx_metal);
-    if (std.mem.eql(u8, backend_name, "sdl2")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl2);
-    if (std.mem.eql(u8, backend_name, "sdl2_renderer")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl2_renderer);
-    if (std.mem.eql(u8, backend_name, "sdl3")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl3);
-    if (std.mem.eql(u8, backend_name, "sdl3_opengl3")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl3_opengl3);
-    if (std.mem.eql(u8, backend_name, "sdl3_vulkan")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl3_vulkan);
-    if (std.mem.eql(u8, backend_name, "sdl3_renderer")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl3_renderer);
-    if (std.mem.eql(u8, backend_name, "sdl3_gpu")) return dependencyWithBackend(b, package, pass_target, pass_optimize, target, optimize, .sdl3_gpu);
-
-    @panic("unsupported package dependency backend");
-}
-
-fn dependencyWithFields(
-    b: *std.Build,
-    package: []const u8,
-    pass_target: bool,
-    pass_optimize: bool,
-    fields: []const []const u8,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) ?*std.Build.Dependency {
-    if (pass_target and pass_optimize) {
-        return packageDependency(b, package, .{
-            .target = target,
-            .optimize = optimize,
-            .fields = fields,
-        });
-    }
-    if (pass_target) {
-        return packageDependency(b, package, .{
-            .target = target,
-            .fields = fields,
-        });
-    }
-    if (pass_optimize) {
-        return packageDependency(b, package, .{
-            .optimize = optimize,
-            .fields = fields,
-        });
-    }
-    return packageDependency(b, package, .{
-        .fields = fields,
-    });
-}
-
-fn dependencyForImport(
-    b: *std.Build,
-    pkg_import: spec.PackageImport,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) ?*std.Build.Dependency {
-    // A `fields` string-list option (e.g. uucode's Unicode property tables) is
-    // passed alongside target/optimize. It is mutually exclusive with `backend`
-    // in practice: no corpus dependency takes both.
-    if (pkg_import.fields.len > 0) {
-        return dependencyWithFields(
-            b,
-            pkg_import.package,
-            pkg_import.pass_target,
-            pkg_import.pass_optimize,
-            pkg_import.fields,
-            target,
-            optimize,
-        );
-    }
-    return dependencyWithOptions(
-        b,
-        pkg_import.package,
-        pkg_import.pass_target,
-        pkg_import.pass_optimize,
-        pkg_import.backend,
-        target,
-        optimize,
-    );
-}
-
-fn dependencyForArtifact(
-    b: *std.Build,
-    pkg_artifact: spec.PackageArtifact,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) ?*std.Build.Dependency {
-    return dependencyWithOptions(
-        b,
-        pkg_artifact.package,
-        pkg_artifact.pass_target,
-        pkg_artifact.pass_optimize,
-        pkg_artifact.backend,
-        target,
-        optimize,
-    );
-}
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
@@ -757,11 +568,11 @@ pub fn build(b: *std.Build) void {
     for (spec.modules) |m| {
         const mod = modules.get(m.name).?;
         for (m.pkg_imports) |pkg_import| {
-            const dep = dependencyForImport(b, pkg_import, target, m.optimize) orelse continue;
+            const dep = pkg_import.call(b, target, m.optimize) orelse continue;
             mod.addImport(pkg_import.alias, dep.module(pkg_import.module));
         }
         for (m.pkg_artifacts) |pkg_artifact| {
-            const dep = dependencyForArtifact(b, pkg_artifact, target, m.optimize) orelse continue;
+            const dep = pkg_artifact.call(b, target, m.optimize) orelse continue;
             mod.linkLibrary(dep.artifact(pkg_artifact.artifact));
         }
         for (m.gen_imports) |gen| {

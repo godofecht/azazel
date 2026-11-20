@@ -268,7 +268,11 @@ generated: manpage: {
 
 // A file a build.zig.zon dependency generates and exports.
 generated: unicode_tables: {
-    package: {package: "uucode", named_path: "tables.zig", fields: ["east_asian_width"]}
+    package: {
+        package: "uucode"
+        named_path: "tables.zig"
+        args: [{name: "fields", kind: "string_list", value: ["east_asian_width"]}]
+    }
     outputs: [{name: "tables.zig", install: "share/tables.zig"}]
 }
 
@@ -311,8 +315,8 @@ generate` produces every declared output without compiling a module.
 
 `build_spec.zig` lists each step with its producer, arguments and outputs, so
 the output names and install paths are explicit data. A `package` generator
-must pass the same `fields`, `backend` and `optimize` as the module that
-imports that package. They then share one dependency instance and the
+must pass the same `args` and `optimize` as the module that imports that
+package. They then share one dependency instance and the
 generator runs once.
 
 On Zig 0.14 and 0.15 a captured `stdout` file is named `stdout` on disk, so it
@@ -434,6 +438,87 @@ and prints the matching `packages` declaration.
 declare, when a package has a url without a hash, and when `build.zig.zon`
 disagrees with `packages`.
 
+### Dependency options
+
+A dependency's build function takes options through `b.option`. A project
+passes them with `args` on a `pkg_imports` entry, a `pkg_artifacts` entry or a
+`generated` package. Each option has a `name`, a `kind` and a `value`.
+
+| Kind | Value | Zig argument |
+|---|---|---|
+| `bool` | `true` or `false` | `.with_implot = true` |
+| `int` | a 64-bit integer | `.buffer_pool_size = 256` |
+| `string` | text | `.label = @as([]const u8, "x")` |
+| `string_list` | a list of text | `.fields = @as([]const []const u8, &.{ "a", "b" })` |
+| `enum` | a tag name | `.backend = .glfw_wgpu` |
+| `target` | `"forward"` or a triple such as `"aarch64-linux-gnu"` | `.target = target` |
+| `optimize` | `"forward"` or `Debug`, `ReleaseSafe`, `ReleaseFast`, `ReleaseSmall` | `.optimize = optimize` |
+
+```cue
+packages: zgui: path: "deps/zgui"
+
+app: #Module & {
+    kind: "exe"
+    root: "src/main.zig"
+    pkg_imports: [{
+        alias: "zgui"
+        package: "zgui"
+        module: "root"
+        args: [
+            {name: "backend", kind: "enum", value: "glfw_wgpu"},
+            {name: "with_implot", kind: "bool", value: true},
+        ]
+    }]
+}
+```
+
+The generator writes the call out as Zig source in `build_spec.zig`, one
+function per distinct package and option list:
+
+```zig
+fn dep_136cbad83146(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) ?*std.Build.Dependency {
+    return b.dependency("zgui", .{ .@"target" = target, .@"optimize" = optimize, .@"backend" = .@"glfw_wgpu", .@"with_implot" = true });
+}
+```
+
+Zig reads dependency options from the field names and types of that struct, so
+the call has to exist as source. Option names and enum tags become field names
+and enum literals the compiler checks, quoted so a name such as `with-odd-name`
+is valid. `build.zig` holds no option names. It calls the function the spec
+gives each use, and it resolves a `lazy` package with `lazyDependency`.
+
+`pass_target` and `pass_optimize` forward the module's own target and optimize
+mode as the options `target` and `optimize`. Turn one off to pass your own
+through `args`. Passing a name twice, including `target` while `pass_target` is
+on, is an error.
+
+Checks run in this order:
+
+1. CUE rejects a value that does not fit its kind: a string for a bool, a
+   float for an int, an unknown `kind`.
+2. The generator rejects duplicate names, a bad target triple, an optimize mode
+   that does not exist, and an int outside 64 bits.
+3. `azazel check` reads the dependency's `build.zig` when it is on disk, as it
+   is for a `path` package and for a fetched package in the Zig cache. It lists
+   what `b.option`, `standardTargetOptions` and `standardOptimizeOption`
+   declare. Each arg must name a declared option, the kind must match the
+   declared type, and an enum tag must be one the option's enum defines. A
+   dependency that declares no options is not checked, because it may read them
+   through helpers the scan cannot follow. Set `unchecked: true` on an arg to
+   skip the comparison for that option.
+
+```text
+error: module 'app' imports package 'zgui': option 'bakend' for package 'zgui' is not declared by zgui/build.zig (declared: backend, optimize, shared, target, with_implot); did you mean 'backend'?
+error: module 'app' imports package 'zgui': option 'backend' for package 'zgui' is given tag 'glfw_wgpuu', which its enum does not define (tags: no_backend, glfw_wgpu, glfw_opengl3; zgui/build.zig:27)
+```
+
+`python3 tools/dep_options.py path/to/build.zig` prints the options a build
+script declares.
+
+The earlier `backend` and `fields` fields on imports, artifacts and generated
+packages are gone. Write `{name: "backend", kind: "enum", value: "..."}` and
+`{name: "fields", kind: "string_list", value: [...]}` instead.
+
 ### Options, packages, and generated modules
 
 Top-level options currently support bool, string, and `u32` values. Modules can
@@ -441,10 +526,8 @@ also receive fixed typed `option_values`, including optional 40-character commit
 values.
 
 `pkg_imports`, `pkg_artifacts`, and `pkg_library_paths` model real
-`build.zig.zon` dependency surfaces. The current corpus-proven package-option
-forms include backend enums and string-list fields; replacing those special
-cases with a generic typed dependency-argument representation is a production
-follow-up rather than an invitation to add more one-off fields.
+`build.zig.zon` dependency surfaces. The options a dependency takes are
+described under "Dependency options".
 
 `gen_imports` models the common pattern of compiling a host tool, running it,
 and importing the emitted Zig file through the build graph.

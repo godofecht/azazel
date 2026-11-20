@@ -201,25 +201,41 @@ test "post-build commands have argv" {
     }
 }
 
+/// A dependency option is named once, and its value fits its kind.
+fn checkDepArgs(args: []const spec.DepArg) !void {
+    for (args, 0..) |arg, i| {
+        try testing.expect(arg.name.len > 0);
+        for (args[i + 1 ..]) |other| try testing.expect(!std.mem.eql(u8, arg.name, other.name));
+        switch (arg.kind) {
+            .bool => try testing.expect(std.mem.eql(u8, arg.value, "true") or std.mem.eql(u8, arg.value, "false")),
+            .int => _ = try std.fmt.parseInt(i64, arg.value, 10),
+            .string => {},
+            .string_list => for (arg.items) |item| try testing.expect(item.len >= 0),
+            .@"enum" => try testing.expect(arg.value.len > 0),
+            .target => try testing.expect(arg.value.len > 0),
+            .optimize => {
+                const forward = std.mem.eql(u8, arg.value, "forward");
+                _ = std.meta.stringToEnum(std.builtin.OptimizeMode, arg.value) orelse
+                    if (forward) std.builtin.OptimizeMode.Debug else return error.InvalidOptimizeMode;
+            },
+        }
+    }
+}
+
 test "package imports and artifacts name their package surfaces" {
     for (spec.modules) |m| {
         for (m.pkg_imports) |pkg| {
             try testing.expect(pkg.alias.len > 0);
             try testing.expect(pkg.package.len > 0);
             try testing.expect(pkg.module.len > 0);
-            _ = pkg.pass_target;
-            _ = pkg.pass_optimize;
-            _ = pkg.backend;
-            // A `fields` string-list option (uucode-style) names non-empty
-            // tables when present; ordinary imports leave it empty.
-            for (pkg.fields) |field| try testing.expect(field.len > 0);
+            try checkDepArgs(pkg.args);
+            _ = pkg.call;
         }
         for (m.pkg_artifacts) |pkg| {
             try testing.expect(pkg.package.len > 0);
             try testing.expect(pkg.artifact.len > 0);
-            _ = pkg.pass_target;
-            _ = pkg.pass_optimize;
-            _ = pkg.backend;
+            try checkDepArgs(pkg.args);
+            _ = pkg.call;
         }
         for (m.pkg_library_paths) |path| {
             try testing.expect(path.package.len > 0);

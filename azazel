@@ -16,6 +16,7 @@ from pathlib import Path
 # The ZON reader lives beside the corpus tooling and is shared with it.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
 
+import dep_options  # noqa: E402
 import workspace  # noqa: E402
 import zon  # noqa: E402
 
@@ -182,10 +183,18 @@ def package_errors(packages: dict, modules: dict, generated: dict, root: Path) -
                 package = item.get("package")
                 if package not in packages:
                     errors.append(f"module {name!r} {what} package {package!r}, which is not declared in packages")
+                    continue
+                if field != "pkg_library_paths":
+                    owner = f"module {name!r} {what} package {package!r}"
+                    errors.extend(dep_options.package_use_errors(owner, package, item, packages, root))
     for name, gen in generated.items():
-        package = (gen.get("package") or {}).get("package")
+        use = gen.get("package") or {}
+        package = use.get("package")
         if package is not None and package not in packages:
             errors.append(f"generated {name!r} reads package {package!r}, which is not declared in packages")
+        elif package is not None:
+            owner = f"generated {name!r} reads package {package!r}"
+            errors.extend(dep_options.package_use_errors(owner, package, use, packages, root))
 
     if not packages:
         return errors
