@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -130,6 +131,8 @@ def cache_build(workdir: Path, store: Path, env: dict[str, str]) -> tuple[str, s
     """Run cache_build.sh. Returns `HIT` or `MISS` or `REFUSED`, and the key."""
     env = dict(env, AZAZEL_PROJECT=str(workdir), SHARED=str(store))
     result = run(["sh", str(AZAZEL_ROOT / "cache_build.sh")], workdir, env)
+    if result.returncode != 0:
+        return "FAILED", result.stdout[-2000:]
     for line in result.stdout.splitlines():
         if line.startswith("[azazel-cache] HIT"):
             return "HIT", line.split()[-1]
@@ -201,6 +204,8 @@ def parity_entry(root: Path, repo: huge_corpus.Repo, scratch: Path) -> dict[str,
     for rel in MUTATIONS[repo.name]:
         target = workdir / rel
         original = target.read_text(encoding="utf-8")
+        # A run that was killed mid-mutation leaves the addition behind.
+        original = original.removesuffix(ADDITION)
         try:
             target.write_text(original + ADDITION, encoding="utf-8")
             wipe(workdir)
@@ -245,6 +250,8 @@ def parity_entry(root: Path, repo: huge_corpus.Repo, scratch: Path) -> dict[str,
 
 
 def main() -> int:
+    # Let `finally` blocks restore mutated sources when the run is terminated.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--root", required=True, help="the corpus clone directory, as for huge_corpus.py --root")
     parser.add_argument("--repo", action="append", default=[], help="repo name; default libvaxis and libxev")
