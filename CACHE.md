@@ -116,6 +116,10 @@ Hit against miss is compared byte for byte.
 - The parity run covers macOS arm64 with Zig 0.16.0. The test suite in CI
   exercises the key and the scripts on Linux, and does not run the real-slice
   comparison.
+- Two clean builds of the end-to-end test project differ in `bin/app` and
+  `lib/liblib.a` on Linux with Zig 0.15.2. On that host the test holds a hit
+  byte for byte to the miss that stored it, and holds it to a clean build by file
+  list only.
 
 ## Backends
 
