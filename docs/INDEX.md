@@ -17,7 +17,7 @@ Azazel is a deterministic CUE-to-Zig build-model layer. Start with the productio
 
 - [Contributing](../CONTRIBUTING.md): required end-to-end changes and verification commands.
 - [Security](../SECURITY.md): security reporting and supported-surface guidance.
-- [Experimental shared cache](../CACHE.md): current limitations and promotion criteria.
+- [Shared cache](../CACHE.md): the declared-input key, what is refused, and the evidence.
 
 ## Dogfood and experimental projects
 

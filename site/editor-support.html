@@ -36,22 +36,10 @@
 
 <h1 id="editor-support">Editor Support</h1>
 
-<p><code>ide/vscode</code> contains a dependency-free VS Code extension for authoring
-<code>project.cue</code> files. It provides CUE syntax highlighting, inline <code>cue export -e
-build</code> diagnostics, and two azazel graph warnings that CUE cannot express:</p>
-
-<ul>
-<li>a <code>deps</code> string that names no module in <code>project.cue</code></li>
-<li>a module that is absent from <code>export.cue</code>'s <code>_modules</code> map</li>
-</ul>
-
-<p>It also provides completion for <code>#Module</code> fields and enum values, hover help for
-fields and enum values, go-to-definition from a dependency string to its module
-declaration, and the <code>Azazel: Generate build_spec</code> command.</p>
-
-<p>Open <code>ide/vscode</code> in VS Code and press F5 to try it from source. The shared
-language feature logic is also exposed by the stdio LSP prototype in
-<code>ide/server/server.js</code>; run <code>node ide/server/test-client.js</code> for a smoke test.</p>
+<p><code>ide/</code> contains VS Code and language-server experiments for CUE diagnostics,
+completion, hover information, and dependency navigation. Editor tooling is not
+a runtime dependency of the production build path and is currently outside the
+production support contract.</p>
 
 <div class="page-footer">
   <a href="examples.html">&larr; Examples</a>

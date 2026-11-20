@@ -38,104 +38,37 @@
 
 <h2 id="quickstart-5-minutes">Quickstart (5 minutes)</h2>
 
-<h3 id="1-build-what-is-already-there">1. Build what is already there</h3>
+<p>Declare a module and executable:</p>
 
-<pre><code>$ ./gen_build_spec.sh
-Generated build_spec.zig
+<pre data-lang="cue"><code class="language-cue">package build
 
-$ zig build
+core: #Module &amp; {
+    kind: "module"
+    root: "src/core.zig"
+}
 
-$ ./zig-out/bin/app
-azazel</code></pre>
-
-<h3 id="2-see-what-cue-resolved">2. See what CUE resolved</h3>
-
-<pre><code>$ cue export -e build
-{
-    "modules": {
-        "core": {
-            "kind": "static",
-            "root": "src/core.zig",
-            "deps": [],
-            "optimize": "Debug"
-        },
-        "app": {
-            "kind": "exe",
-            "root": "src/main.zig",
-            "deps": [
-                "core"
-            ],
-            "optimize": "ReleaseFast"
-        },
-        ...
-    }
+app: #Module &amp; {
+    kind:    "exe"
+    root:    "src/main.zig"
+    deps:    ["core"]
+    profile: "release"
 }</code></pre>
 
-<p><code>project.cue</code> never mentions <code>deps</code> for <code>core</code>, and never mentions
-<code>optimize</code> at all. CUE supplies <code>deps: []</code> from the schema default and turns
-<code>profile: "release"</code> into <code>optimize: "ReleaseFast"</code>.</p>
-
-<h3 id="3-add-a-module">3. Add a module</h3>
-
-<p>Append to <code>project.cue</code>:</p>
-
-<pre data-lang="cue"><code class="language-cue">utils: #Module &amp; {
-	kind: "static"
-	root: "src/utils.zig"
-}</code></pre>
-
-<p>Add it to <code>_modules</code> in <code>export.cue</code>:</p>
+<p>Export them from <code>export.cue</code>:</p>
 
 <pre data-lang="cue"><code class="language-cue">_modules: {
-	"core":        core
-	"app":         app
-	"utils":       utils
-	"danzig":      danzig
-	"danzig_gain": danzig_gain
-	"danzig_test": danzig_test
+    "core": core
+    "app":  app
 }</code></pre>
 
-<p>Regenerate and build:</p>
+<p>Then:</p>
 
-<pre data-lang="sh"><code class="language-sh">./gen_build_spec.sh &amp;&amp; zig build</code></pre>
+<pre data-lang="sh"><code class="language-sh">python3 azazel check
+python3 azazel gen
+python3 azazel build
+python3 azazel info</code></pre>
 
-<p><code>zig-out/lib/libutils.a</code> appears.</p>
-
-<p>Forgetting the <code>export.cue</code> half is the most common mistake. Nothing errors.
-The module is simply not built.</p>
-
-<h3 id="4-depend-on-it">4. Depend on it</h3>
-
-<pre data-lang="cue"><code class="language-cue">app: #Module &amp; {
-	kind:    "exe"
-	root:    "src/main.zig"
-	deps:    ["core", "utils"]
-	profile: "release"
-}</code></pre>
-
-<p><code>deps</code> is a linker edge. Symbols cross it as C-ABI symbols. See
-<a href="schema-reference.html#deps"><code>deps</code></a> below.</p>
-
-<h3 id="5-run-the-tests">5. Run the tests</h3>
-
-<pre><code>$ zig build test --summary all
-
-Build Summary: 7/7 steps succeeded; 56/56 tests passed
-test success
-+- run test 12 passed 1ms MaxRSS:1M
-|  +- compile test Debug native cached 40ms MaxRSS:34M
-+- run test 9 passed 1ms MaxRSS:2M
-|  +- compile test Debug native cached 40ms MaxRSS:34M
-+- run test 35 passed 1ms MaxRSS:1M
-   +- compile test Debug native cached 40ms MaxRSS:34M</code></pre>
-
-<p>Available steps:</p>
-
-<pre><code>$ zig build --help
-Steps:
-  install (default)            Copy build artifacts to prefix path
-  uninstall                    Remove build artifacts from prefix path
-  test                         Run all tests</code></pre>
+<p>Normal Zig build arguments can be forwarded through <code>azazel build</code>.</p>
 
 <div class="page-footer">
   <a href="installation.html">&larr; Installation</a>

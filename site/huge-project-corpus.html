@@ -36,55 +36,20 @@
 
 <h1 id="huge-project-corpus">Huge Project Corpus</h1>
 
-<p>Azazel's small examples are smoke tests, not the target ceiling. The large-repo
-pressure suite is tracked in <a href="https://github.com/godofecht/azazel/blob/main/docs/HUGE_PROJECT_CORPUS.md">HUGE_PROJECT_CORPUS.md</a>.
-It records real build graph shapes from ten projects: ZLS, libxev, River,
-Mach, MicroZig, libvaxis, Capy, zig-gamedev, TigerBeetle, and Ghostty, plus the
-gaps those projects expose in Azazel and Zaza.</p>
+<p><code>tools/huge_corpus.py</code> pressure-tests Azazel against substantial Zig projects,
+including ZLS, libxev, River, Mach, MicroZig, libvaxis, Capy, zig-gamedev,
+TigerBeetle, and Ghostty.</p>
 
-<p>Use <code>tools/huge_corpus.py --plan --expect-count 10</code> to write a preflight
-<code>corpus-plan.json</code> and prove the full batch is selected. Use
-<code>tools/huge_corpus.py --roadmap --expect-count 10</code> to write
-<code>corpus-roadmap.md</code> plus issue-ready markdown files under <code>corpus-issues/</code> from
-the same manifest data. Use <code>tools/huge_corpus.py --prepare</code> to create the fork overlays,
-<code>tools/huge_corpus.py --audit</code> to record the host Zig baseline,
-<code>tools/huge_corpus.py --doctor</code> to check local toolchains and host prerequisites,
-<code>tools/huge_corpus.py --build</code> to prove the upstream build with the declared
-toolchain, <code>tools/huge_corpus.py --parity</code> to emit <code>parity-results.json</code>, and
-<code>tools/huge_corpus.py --executable-parity</code> to run modeled Azazel target slices.
-Build reports include first target slices, replacement gaps, required tools,
-pkg-config probes, and a concrete next action. Parity reports compare the
-observed baseline classification with each repo's manifest. Executable parity
-reports regenerate Azazel's <code>build_spec.zig</code> inside <code>.azazel/parity-work/</code> and
-run the generated Zig build for any target slice marked ready.</p>
+<p>The corpus deliberately distinguishes upstream build success from Azazel
+replacement evidence. An upstream result runs the project's own <code>build.zig</code>; an
+Azazel executable-parity result means a modeled target slice actually compiled
+through the generated Azazel graph. Full-project parity is not claimed from a
+successful slice.</p>
 
-<p>The first executable Azazel slices are <code>libxev</code>, <code>libvaxis</code>, and
-<code>zig-gamedev</code>. <code>libxev</code> proves plain import-mode module compilation by pointing
-<code>module:xev</code> at upstream <code>src/main.zig</code> and compiling a generated
-<code>exe:xev_probe</code>. <code>libvaxis</code> adds package-backed module compilation:
-<code>module:vaxis</code> imports local <code>zigimg</code> and <code>uucode</code> path dependencies through the
-generated parity workspace's <code>build.zig.zon</code>, but strict install-path parity now
-reaches <code>uucode</code>'s generated table builder and exposes the missing generated
-Unicode config surface. <code>zig-gamedev</code> compiles the shared
-sample <code>samples/common/src/vectormath.zig</code> module through a generated
-<code>exe:zig_gamedev_vectormath_probe</code> on Zig <code>0.15.2</code> and imports the pinned
-<code>zmath</code>, <code>zopengl</code>, <code>zglfw</code>, <code>zmesh</code>, and <code>znoise</code> packages through the parity
-workspace's <code>build.zig.zon</code>. The <code>zglfw</code>, <code>zmesh</code>, and <code>znoise</code> slices also
-link their exported native artifacts, which proves package artifact linking
-plus native/framework metadata traversal. The parity runner also stages
-<code>samples/sdl2_demo/sdl2_demo_content</code> into an explicit install prefix and checks
-for <code>zero.png</code>. These slices prove real Azazel graphs can compile upstream
-source, package dependencies, native package artifacts, and runtime asset
-directories, but they do not claim full replacement; library variants,
-pkg-config/manpage generation, generated Unicode table options, benchmarks,
-examples, and full example selection remain tracked gaps.</p>
-
-<p>As of the current 10-repo proof plan, <code>libxev</code>, <code>libvaxis</code>, <code>zig-gamedev</code>, and
-<code>tigerbeetle</code> build successfully with their declared Zig lanes. The other corpus projects are
-blocked by concrete non-Azazel issues: ZLS's supported dev-toolchain window,
-River host system dependencies, Mach's custom Zig mirror, MicroZig dependency
-fetching, Capy's transitive package-format drift, and Ghostty's macOS
-app-bundle packaging path.</p>
+<p>A corpus repo can declare target slices, such as <code>samples/minimal_*</code> for
+zig-gamedev and <code>port/*/*</code> for MicroZig. A run builds the selected directories
+one at a time and reports the selected paths. See
+<a href="https://github.com/godofecht/azazel/blob/main/docs/HUGE_PROJECT_CORPUS.md"><code>HUGE_PROJECT_CORPUS.md</code></a> for the detailed matrix.</p>
 
 <div class="page-footer">
   <a href="editor-support.html">&larr; Editor Support</a>

@@ -36,38 +36,16 @@
 
 <h1 id="examples">Examples</h1>
 
-<p>Four runnable projects under <code>examples/</code>. Each is self-contained. Copy one
-somewhere else and it still builds.</p>
+<p>The maintained self-contained examples are <code>01-hello</code>, <code>02-lib-and-app</code>,
+<code>03-services</code>, <code>04-validation</code>, <code>05-import-mode</code>, and <code>06-clusters</code>. They range
+from the minimum project through validation, pure Zig imports, and clustered
+large-graph topology.</p>
 
-<div class="table-scroll">
-<table>
-<thead><tr><th>Directory</th><th>Demonstrates</th></tr></thead>
-<tbody>
-<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/01-hello"><code>01-hello</code></a></td><td>The minimum module. Both defaults.</td></tr>
-<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/02-lib-and-app"><code>02-lib-and-app</code></a></td><td><code>deps</code>, <code>profile</code>, static linkage, the C-ABI boundary.</td></tr>
-<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/03-services"><code>03-services</code></a></td><td>All three kinds, a shared library, multiple deps, mixed profiles.</td></tr>
-<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/04-validation"><code>04-validation</code></a></td><td>Every rejection the schema performs, with real <code>cue</code> output.</td></tr>
-<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/05-import-mode"><code>05-import-mode</code></a></td><td><code>link: "import"</code>, a dependency merged as a Zig module instead of linked.</td></tr>
-<tr><td><a href="https://github.com/godofecht/azazel/tree/main/examples/06-clusters"><code>06-clusters</code></a></td><td>Clusters: <code>import</code> graphs behind <code>abi</code> boundaries, the shape for large projects.</td></tr>
-</tbody>
-</table>
-</div>
-
-<p>Each has its own README with exact commands and their output.</p>
-
-<pre data-lang="sh"><code class="language-sh">cd examples/03-services
-./gen_build_spec.sh
-zig build
-./zig-out/bin/gateway
-zig build test --summary all</code></pre>
-
-<p>To build and test all of them at once:</p>
+<p>Run them with:</p>
 
 <pre data-lang="sh"><code class="language-sh">./setup.sh --examples</code></pre>
 
-<p>The older <code>examples/*.cue</code> files (<code>minimal.cue</code>, <code>microservice.cue</code>,
-<code>multi_lib.cue</code>) are illustrative fragments. They are not runnable on their
-own.</p>
+<p>Danzig examples are dogfood workloads. They sit outside the Azazel build-system API.</p>
 
 <div class="page-footer">
   <a href="code-generation.html">&larr; Code Generation</a>

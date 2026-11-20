@@ -18,7 +18,7 @@ The core build pipeline is production-supported on Zig **0.14.1, 0.15.2, and 0.1
 
 Azazel is still pre-1.0. Pin the revision or release you adopt and upgrade deliberately. The exact support contract and release gate are in [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
-The shared artifact cache is **experimental and disabled by default**. It must not be used for release artifacts until its key proves a complete input closure. See [`CACHE.md`](CACHE.md).
+The shared artifact cache keys each build on its declared-input closure and refuses a build whose inputs it cannot name. `CACHE.md` lists what the key covers, what is refused, and the evidence.
 
 ## What it looks like
 
@@ -198,7 +198,7 @@ See [`docs/HUGE_PROJECT_CORPUS.md`](docs/HUGE_PROJECT_CORPUS.md).
 
 The production build path does not depend on the shared cache, corpus automation, IDE prototypes, or Danzig.
 
-`cache_build.sh` is an explicitly gated cache experiment. `tools/huge_corpus.py` is validation/research infrastructure. `ide/` contains editor experiments. `src/danzig/` is retained as a substantial integration/dogfood workload rather than as part of Azazel's build-system API.
+`tools/huge_corpus.py` is validation/research infrastructure. `ide/` contains editor experiments. `src/danzig/` is retained as a substantial integration/dogfood workload rather than as part of Azazel's build-system API.
 
 Keeping those boundaries explicit is intentional: experimental surfaces may inform the build model without silently becoming production dependencies.
 

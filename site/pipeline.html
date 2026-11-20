@@ -36,28 +36,33 @@
 
 <h1 id="the-pipeline">The Pipeline</h1>
 
-<pre><code>project.cue  -&gt;  cue export  -&gt;  build_spec.zig  -&gt;  zig build  -&gt;  binaries
-   (you)         (validates)      (generated)        (executes)     (zig-out/)
-     |                |
-  schema.cue     export.cue
-  (types)        (what to emit)</code></pre>
+<pre data-lang="text"><code class="language-text">project.cue
+    |
+schema.cue + export.cue
+    |  cue export -e build
+    v
+resolved model
+    |  gen_build_spec.sh
+    v
+build_spec.zig
+    |  comptime import
+    v
+build.zig / std.Build
+    |
+    v
+zig-out/</code></pre>
 
-<p>Step by step:</p>
+<p>The canonical path is:</p>
 
-<ol>
-<li>You edit <code>project.cue</code>.</li>
-<li><code>./gen_build_spec.sh</code> runs <code>cue export -e build</code>. CUE unifies your
-declarations with <code>schema.cue</code>, resolves defaults, maps each <code>profile</code> to
-an optimization mode, and rejects anything invalid.</li>
-<li>The same script pipes the resolved JSON through <code>python3</code> and writes
-<code>build_spec.zig</code>, a plain Zig array.</li>
-<li><code>zig build</code> imports <code>build_spec.zig</code> at comptime and walks it.</li>
-</ol>
+<pre data-lang="sh"><code class="language-sh">python3 azazel check
+python3 azazel gen
+python3 azazel build
+zig build test --summary all</code></pre>
 
-<p><code>build_spec.zig</code> is gitignored. It is regenerated, never edited.</p>
-
-<p>Run step 2 after every change to <code>project.cue</code>, <code>export.cue</code> or <code>schema.cue</code>.
-Nothing watches for you.</p>
+<p><code>azazel gen</code> delegates to <code>gen_build_spec.sh</code>; there is one generator
+implementation. <code>build_spec.zig</code> is generated and gitignored. Generation is
+memoized, while CI removes the memoization stamp before its second pass so the
+determinism check performs a real regeneration.</p>
 
 <div class="page-footer">
   <a href="index.html">&larr; Overview</a>

@@ -36,130 +36,37 @@
 
 <h1 id="troubleshooting">Troubleshooting</h1>
 
-<h3 id="unable-to-load-build_speczig-filenotfound"><code>unable to load 'build_spec.zig': FileNotFound</code></h3>
+<h3 id="missing-exported-fields">Missing exported fields</h3>
 
-<pre><code>$ zig build
-build_spec.zig:1:1: error: unable to load 'build_spec.zig': FileNotFound
-build.zig:2:22: note: file imported here
-const spec = @import("build_spec.zig");
-                     ^~~~~~~~~~~~~~~~</code></pre>
+<p>If <code>azazel check</code> reports missing fields, a schema/project capability was not
+preserved by <code>export.cue</code>. Treat that as an Azazel pipeline bug.</p>
 
-<p>The spec has not been generated. It is gitignored, so a fresh clone never has
-one.</p>
+<h3 id="unknown-dependency-or-cycle">Unknown dependency or cycle</h3>
 
-<pre data-lang="sh"><code class="language-sh">./gen_build_spec.sh</code></pre>
+<p>Every <code>deps</code> entry must name an exported module. <code>azazel check</code> rejects unknown
+references, self-dependencies, and cycles before generation.</p>
 
-<h3 id="cue-command-not-found"><code>cue: command not found</code></h3>
+<h3 id="module-declared-but-not-built">Module declared but not built</h3>
 
-<pre><code>$ ./gen_build_spec.sh
-./gen_build_spec.sh: line 8: cue: command not found
-$ echo $?
-127</code></pre>
+<p>Check <code>_modules</code> in <code>export.cue</code>; only explicitly exported declarations enter the
+resolved graph.</p>
 
-<p>Install CUE, or run <code>./setup.sh --check-only</code> to see what is missing.
-<code>gen_build_spec.sh</code> calls <code>cue</code> by name and does not honour a <code>CUE</code>
-environment variable; <code>setup.sh</code> does, and puts it on <code>PATH</code> for the
-generator.</p>
+<h3 id="unsupported-zig-lane">Unsupported Zig lane</h3>
 
-<h3 id="a-module-i-added-does-not-get-built">A module I added does not get built</h3>
+<p>Use a compiler in the project's declared lane set. Do not widen the declaration
+until the project has actually been tested there.</p>
 
-<p>Check <code>export.cue</code>. A module in <code>project.cue</code> that is absent from <code>_modules</code>
-is dropped silently. <code>cue vet</code> returns 0 and <code>gen_build_spec.sh</code> prints its
-usual success line.</p>
+<h3 id="package-option-is-unsupported">Package option is unsupported</h3>
 
-<h3 id="thread-n-panic-attempt-to-use-null-value-in-buildzig"><code>thread N panic: attempt to use null value</code> in build.zig</h3>
+<p>Do not silently discard it. Model it explicitly with a real-project test, or use
+the generic typed dependency-option work once it lands.</p>
 
-<pre><code>$ zig build
-thread 868007 panic: attempt to use null value
-/path/to/azazel/build.zig:43:44: 0x1002a0033 in build (build)
-            step.linkLibrary(built.get(dep).?);
-                                           ^</code></pre>
+<h3 id="shared-cache-says-the-build-is-not-cacheable">Shared cache says the build is not cacheable</h3>
 
-<p>A name in some module's <code>deps</code> is not a module. Compare the <code>deps</code> lists in
-<code>project.cue</code> against the keys in <code>export.cue</code>'s <code>_modules</code>. Typos and
-modules you forgot to export both land here.</p>
-
-<h3 id="error-no-module-named-x-available-within-module-root"><code>error: no module named 'X' available within module 'root'</code></h3>
-
-<pre><code>$ zig build
-src/calc.zig:3:25: error: no module named 'mathlib' available within module 'root'
-const mathlib = @import("mathlib");
-                        ^~~~~~~~~</code></pre>
-
-<p><code>deps</code> links a library. It does not register a Zig module. Export the symbols
-you need with <code>pub export fn</code> and declare them with <code>extern fn</code> on the other
-side. See <a href="schema-reference.html#deps"><code>deps</code></a>.</p>
-
-<p>Note that Zig analyses top-level declarations lazily, so an unused
-<code>@import</code> of a non-existent module compiles fine. The error appears the first
-time you use it.</p>
-
-<h3 id="failed-to-check-cache-srcxzig-file_hash-filenotfound"><code>failed to check cache: 'src/X.zig' file_hash FileNotFound</code></h3>
-
-<p>The <code>root</code> path in <code>project.cue</code> is wrong. Paths are relative to the
-directory containing <code>build.zig</code>. <code>zig build test</code> gives the better message:</p>
-
-<pre><code>error: 'spec_test.test.every module root exists on disk' failed: missing root for module 'mathlib': src/nope.zig</code></pre>
-
-<h3 id="some-instances-are-incomplete"><code>some instances are incomplete</code></h3>
-
-<pre><code>$ cue vet
-some instances are incomplete; use the -c flag to show errors or -c=false to allow incomplete instances</code></pre>
-
-<p>A required field is unset somewhere. <code>cue vet</code> will not say which. Run
-<code>cue export -e build</code> instead, which names it:</p>
-
-<pre><code>build.modules.app.kind: incomplete value "exe" | "static" | "shared":
-    ./export.cue:10:14</code></pre>
-
-<h3 id="field-not-allowed"><code>field not allowed</code></h3>
-
-<pre><code>$ cue export -e build
-app.flags: field not allowed:
-    ./project.cue:8:2</code></pre>
-
-<p><code>#Module</code> is closed. Only <code>kind</code>, <code>root</code>, <code>deps</code>, <code>profile</code>, <code>link</code>, and <code>post</code>
-exist. If you need something else, add it to the schema and generator, or wire
-it into <code>build.zig</code> directly.</p>
-
-<h3 id="conflicting-values-x-and-y"><code>conflicting values "X" and "Y"</code></h3>
-
-<p>An enumerated field got a value outside its disjunction. One error line per
-branch. The schema file:line at the end of each block tells you which
-disjunction it was.</p>
-
-<h3 id="dyld-library-not-loaded-rpathlibxdylib"><code>dyld: Library not loaded: @rpath/libX.dylib</code></h3>
-
-<p>An executable that links a <code>kind: "shared"</code> module cannot find it at runtime.
-Zig's only rpath points into <code>.zig-cache</code>, relative to the current directory.
-Give the executable an rpath relative to itself:</p>
-
-<pre data-lang="zig"><code class="language-zig">if (m.kind == .exe) {
-    step.root_module.addRPathSpecial(switch (target.result.os.tag) {
-        .macos, .ios, .tvos, .watchos =&gt; "@loader_path/../lib",
-        else =&gt; "$ORIGIN/../lib",
-    });
-}</code></pre>
-
-<p><code>examples/03-services/build.zig</code> does this. The repo root's <code>build.zig</code> does
-not, because it has no executable that links a shared library.</p>
-
-<h3 id="changes-to-projectcue-seem-to-have-no-effect">Changes to project.cue seem to have no effect</h3>
-
-<p><code>build_spec.zig</code> is generated on demand. Nothing watches for you. Run
-<code>./gen_build_spec.sh</code> after every edit to <code>project.cue</code>, <code>export.cue</code> or
-<code>schema.cue</code>.</p>
-
-<h3 id="a-zig-version-outside-the-declared-lanes">A Zig version outside the declared lanes</h3>
-
-<p>Azazel's generated spec declares supported lanes under <code>toolchain.zig.lanes</code>.
-The default lanes are <code>0.14</code>, <code>0.15</code>, and <code>0.16</code>. <code>build.zig</code> checks the current
-compiler against that list at compile time and stops with a toolchain error if
-the lane is unsupported.</p>
-
-<p>This is deliberate: Zig build APIs move quickly, and a clean lane error is more
-useful than a later failure inside <code>std.Build</code>, a dependency build script, or a
-generated source step.</p>
+<p><code>cache_build.sh</code> exits with status 3 and lists a reason for each input the key
+cannot name, such as a <code>post</code> command, a system library or an unmodeled build
+argument. Run <code>python3 azazel cache-key --explain</code> to see the same list. Remove
+the cause or build without the cache. See <a href="https://github.com/godofecht/azazel/blob/main/CACHE.md"><code>../CACHE.md</code></a>.</p>
 
 <div class="page-footer">
   <a href="huge-project-corpus.html">&larr; Huge Corpus</a>

@@ -32,9 +32,12 @@ corpus target slice over claiming parity from an upstream `zig build` result.
 Keep failure classifications explicit; `not-modeled`, missing toolchains, system
 dependencies, and upstream API drift are not Azazel successes.
 
-The shared cache is experimental. Cache changes must not weaken the default
-safety gate or claim correctness until every artifact-affecting input is included
-in the key and negative invalidation tests exist.
+Cache changes must keep the key a function of every artifact-affecting input.
+A new build feature that reads a file, a program or the environment needs either
+a part of the key with a mutation test in `tools/test_cache_closure.py`, or a
+refusal in `tools/cache_closure.py` with a test. Run
+`tools/cache_parity.py --root DIR` against the libvaxis and libxev slices when
+the key or the cache scripts change.
 
 Keep pull requests focused. Large compatibility additions should name the real
 project or build shape that requires them and include the command used to verify
