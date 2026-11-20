@@ -509,6 +509,12 @@ lib: #Module & {
     def test_miss_then_hit_matches_a_clean_build(self) -> None:
         clean = self.clean_build()
         self.assertTrue(clean)
+        # Some toolchains do not produce the same bytes from two clean builds
+        # of one source. A hit can only be held to a clean build when they do.
+        again = self.clean_build()
+        repeatable = differences(clean, again) == []
+        if not repeatable:
+            print(f"\nclean builds differ on this host: {differences(clean, again)}", file=sys.stderr)
         self.wipe()
         first = self.cache_build()
         self.assertEqual(first.returncode, 0, first.stdout)
@@ -520,7 +526,9 @@ lib: #Module & {
         self.assertIn("HIT", second.stdout)
         hit = snapshot(self.project.root / "zig-out", normalize=False)
         self.assertEqual(differences(miss, hit), [])
-        self.assertEqual(differences(clean, snapshot(self.project.root / "zig-out")), [])
+        self.assertEqual(sorted(hit), sorted(clean))
+        if repeatable:
+            self.assertEqual(differences(clean, snapshot(self.project.root / "zig-out")), [])
         self.assertFalse((self.project.root / "zig-out" / ".azazel-cache-key").exists())
 
     def test_native_source_change_misses(self) -> None:
