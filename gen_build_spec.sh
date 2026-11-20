@@ -370,8 +370,16 @@ pub const Native = struct {
     link_libcpp: bool,
 };
 
+pub const Subproject = struct {
+    name: []const u8,
+    path: []const u8,
+    output_dir: []const u8,
+    description: []const u8,
+};
+
 pub const Module = struct {
     name: []const u8,
+    subproject: []const u8,
     artifact_name: []const u8,
     kind: Kind,
     root: []const u8,
@@ -598,6 +606,54 @@ for mod_name, m in data['modules'].items():
             fail('module ' + mod_name + ' consumes ' + use['from'] + '/' + use['output'] + ' as ' + use['as'] + ' and needs an alias')
 " >> build_spec.zig
 
+echo "$DATA" | python3 -c "
+import json, posixpath, sys
+
+def zig_string(s):
+    return json.dumps(s)
+
+def fail(message):
+    sys.stderr.write('gen_build_spec.sh: ' + message + chr(10))
+    sys.exit(1)
+
+def relative_path(label, value, allow_empty):
+    if value == '':
+        if allow_empty:
+            return
+        fail(label + ' must not be empty')
+    if value.startswith('/') or value.endswith('/') or posixpath.normpath(value) != value or '..' in value.split('/'):
+        fail(label + ' must be a normalized relative path with no .. segments: ' + value)
+
+data = json.load(sys.stdin)
+subs = data.get('subprojects', {})
+paths = {}
+print('pub const subprojects = [_]Subproject{')
+for name, sub in subs.items():
+    label = 'subproject ' + name
+    relative_path(label + ' path', sub['path'], False)
+    relative_path(label + ' output_dir', sub.get('output_dir', ''), True)
+    if sub['path'] in paths:
+        fail(label + ' has the same path as subproject ' + paths[sub['path']] + ': ' + sub['path'])
+    paths[sub['path']] = name
+    print('    .{ .name = ' + zig_string(name)
+          + ', .path = ' + zig_string(sub['path'])
+          + ', .output_dir = ' + zig_string(sub.get('output_dir', ''))
+          + ', .description = ' + zig_string(sub.get('description', ''))
+          + ' },')
+print('};')
+print()
+
+for mod_name, m in data['modules'].items():
+    owner = m.get('subproject', '')
+    if not owner:
+        continue
+    if owner not in subs:
+        fail('module ' + mod_name + ' belongs to unknown subproject ' + owner)
+    base = subs[owner]['path']
+    if not m['root'].startswith(base + '/'):
+        fail('module ' + mod_name + ' root ' + m['root'] + ' is outside subproject ' + owner + ' (' + base + ')')
+" >> build_spec.zig
+
 printf 'pub const modules = [_]Module{\n' >> build_spec.zig
 
 echo "$DATA" | python3 -c "
@@ -787,6 +843,7 @@ for name, m in mods.items():
     native_str = zig_native(m.get('native', {}))
     print(f'''    .{{
         .name = {zig_string(name)},
+        .subproject = {zig_string(m.get('subproject', ''))},
         .artifact_name = {zig_string(m.get('artifact_name', name))},
         .kind = {kind},
         .root = {zig_string(m['root'])},

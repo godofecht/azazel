@@ -40,3 +40,66 @@ test "exists through the adaptor" {
     try std.testing.expect(exists(ioh, "schema.cue"));
     try std.testing.expect(!exists(ioh, "definitely-not-a-real-file.xyz"));
 }
+
+/// Glob matching for target paths, shared with `tools/workspace.py`.
+///
+/// `*` matches any run of characters except `/`. `?` matches one character
+/// except `/`. `**` matches any run of characters including `/`, and `**/`
+/// also matches zero path segments. Every other character matches itself.
+pub fn globMatch(pattern: []const u8, text: []const u8) bool {
+    if (pattern.len == 0) return text.len == 0;
+    if (pattern[0] == '*') {
+        if (pattern.len >= 2 and pattern[1] == '*') {
+            const rest = pattern[2..];
+            if (rest.len > 0 and rest[0] == '/') {
+                if (globMatch(rest[1..], text)) return true;
+                var k: usize = 0;
+                while (k < text.len) : (k += 1) {
+                    if (text[k] == '/' and globMatch(rest[1..], text[k + 1 ..])) return true;
+                }
+                return false;
+            }
+            var k: usize = 0;
+            while (k <= text.len) : (k += 1) {
+                if (globMatch(rest, text[k..])) return true;
+            }
+            return false;
+        }
+        var k: usize = 0;
+        while (true) {
+            if (globMatch(pattern[1..], text[k..])) return true;
+            if (k >= text.len or text[k] == '/') return false;
+            k += 1;
+        }
+    }
+    if (text.len == 0) return false;
+    if (pattern[0] == '?') {
+        if (text[0] == '/') return false;
+        return globMatch(pattern[1..], text[1..]);
+    }
+    if (pattern[0] != text[0]) return false;
+    return globMatch(pattern[1..], text[1..]);
+}
+
+test "globMatch agrees with the shared case table" {
+    const alloc = std.testing.allocator;
+    const ioh = io();
+    const data = readFile(ioh, alloc, "tools/glob_cases.txt") orelse return error.MissingGlobCases;
+    defer alloc.free(data);
+    var count: usize = 0;
+    var lines = std.mem.splitScalar(u8, data, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0 or line[0] == '#') continue;
+        var fields = std.mem.splitScalar(u8, line, '\t');
+        const pattern = fields.next() orelse return error.BadCaseLine;
+        const text = fields.next() orelse return error.BadCaseLine;
+        const verdict = fields.next() orelse return error.BadCaseLine;
+        const want = std.mem.eql(u8, verdict, "match");
+        if (globMatch(pattern, text) != want) {
+            std.debug.print("glob case failed: pattern={s} text={s} want={s}\n", .{ pattern, text, verdict });
+            return error.GlobCaseFailed;
+        }
+        count += 1;
+    }
+    try std.testing.expect(count >= 20);
+}

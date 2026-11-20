@@ -46,6 +46,90 @@ fn kindOf(name: []const u8) spec.Kind {
     return .module;
 }
 
+fn subprojectOf(m: spec.Module) ?spec.Subproject {
+    if (m.subproject.len == 0) return null;
+    for (spec.subprojects) |sub| {
+        if (std.mem.eql(u8, sub.name, m.subproject)) return sub;
+    }
+    return null;
+}
+
+/// The path a module is selected by: `<subproject path>/<module name>`, or the
+/// module name for a module of the repository root.
+fn targetPath(b: *std.Build, m: spec.Module) []const u8 {
+    if (subprojectOf(m)) |sub| return b.pathJoin(&.{ sub.path, m.name });
+    return m.name;
+}
+
+/// Which modules a build installs. With no `-Dslice` and no `-Dsubproject`
+/// every module is selected. Otherwise a module is selected when a slice glob
+/// matches its target path or its subproject path, or when its subproject is
+/// named. Dependencies of a selected module still build, since linking needs
+/// them, but only selected modules are installed.
+const Selection = struct {
+    slices: []const []const u8,
+    subprojects: []const []const u8,
+
+    fn active(self: Selection) bool {
+        return self.slices.len != 0 or self.subprojects.len != 0;
+    }
+
+    fn includes(self: Selection, b: *std.Build, m: spec.Module) bool {
+        if (!self.active()) return true;
+        for (self.subprojects) |name| {
+            if (std.mem.eql(u8, name, m.subproject)) return true;
+        }
+        const path = targetPath(b, m);
+        const base = if (subprojectOf(m)) |sub| sub.path else "";
+        for (self.slices) |glob| {
+            if (compat.globMatch(glob, path)) return true;
+            if (base.len != 0 and compat.globMatch(glob, base)) return true;
+        }
+        return false;
+    }
+};
+
+fn readSelection(b: *std.Build) Selection {
+    const selection = Selection{
+        .slices = b.option([]const []const u8, "slice", "Build only modules whose target path or subproject path matches this glob (repeatable)") orelse &.{},
+        .subprojects = b.option([]const []const u8, "subproject", "Build only the modules of this subproject (repeatable)") orelse &.{},
+    };
+    for (selection.subprojects) |name| {
+        var known = false;
+        for (spec.subprojects) |sub| {
+            if (std.mem.eql(u8, sub.name, name)) known = true;
+        }
+        if (!known) {
+            b.invalid_user_input = true;
+            std.log.err("-Dsubproject={s} names no subproject declared in project.cue; the declared subprojects are:", .{name});
+            for (spec.subprojects) |sub| std.log.err("  subproject {s} ({s})", .{ sub.name, sub.path });
+        }
+    }
+    for (selection.slices) |glob| {
+        var matched = false;
+        for (spec.modules) |m| {
+            if ((Selection{ .slices = &.{glob}, .subprojects = &.{} }).includes(b, m)) matched = true;
+        }
+        if (!matched) {
+            b.invalid_user_input = true;
+            std.log.err("-Dslice={s} matches no module or subproject path; target paths are:", .{glob});
+            for (spec.modules) |m| std.log.err("  {s}", .{targetPath(b, m)});
+        }
+    }
+    return selection;
+}
+
+fn installOptions(b: *std.Build, m: spec.Module) std.Build.Step.InstallArtifact.Options {
+    var options: std.Build.Step.InstallArtifact.Options = .{};
+    if (subprojectOf(m)) |sub| {
+        if (sub.output_dir.len != 0) {
+            const leaf: []const u8 = if (m.kind == .exe) "bin" else "lib";
+            options.dest_dir = .{ .override = .{ .custom = b.pathJoin(&.{ sub.output_dir, leaf }) } };
+        }
+    }
+    return options;
+}
+
 fn addPostCommand(b: *std.Build, module_name: []const u8, index: usize, cmd: spec.Command) *std.Build.Step {
     const run = b.addSystemCommand(cmd.argv);
     run.stdio = .inherit;
@@ -441,6 +525,18 @@ pub fn build(b: *std.Build) void {
     const preflight = addSystemPreflight(b, target);
     b.getInstallStep().dependOn(preflight);
 
+    const selection = readSelection(b);
+
+    // One step per subproject builds and installs just its modules.
+    const subproject_steps = b.allocator.alloc(*std.Build.Step, spec.subprojects.len) catch @panic("OOM");
+    for (spec.subprojects, 0..) |sub, i| {
+        subproject_steps[i] = b.step(
+            b.fmt("subproject-{s}", .{sub.name}),
+            b.fmt("Build the modules of subproject {s} ({s})", .{ sub.name, sub.path }),
+        );
+        subproject_steps[i].dependOn(preflight);
+    }
+
     // A Zig module for every declared module, and a compile step only for the
     // ones that become a real artifact. An `import` dependency is merged into
     // its dependents as a module, so it needs no artifact and no link step.
@@ -529,7 +625,7 @@ pub fn build(b: *std.Build) void {
                 .install_subdir = dir.install_subdir,
             });
             step.step.dependOn(&install_dir.step);
-            b.getInstallStep().dependOn(&install_dir.step);
+            if (selection.includes(b, m)) b.getInstallStep().dependOn(&install_dir.step);
         }
         applyPackageLibraryPaths(b, step, m.pkg_library_paths, target.result);
         steps.put(m.name, step) catch unreachable;
@@ -552,12 +648,16 @@ pub fn build(b: *std.Build) void {
 
     for (spec.modules) |m| {
         if (steps.get(m.name)) |step| {
-            const install = b.addInstallArtifact(step, .{});
-            b.getInstallStep().dependOn(&install.step);
+            const install = b.addInstallArtifact(step, installOptions(b, m));
+            const selected = selection.includes(b, m);
+            if (selected) b.getInstallStep().dependOn(&install.step);
+            for (spec.subprojects, 0..) |sub, i| {
+                if (std.mem.eql(u8, sub.name, m.subproject)) subproject_steps[i].dependOn(&install.step);
+            }
             for (m.post, 0..) |cmd, idx| {
                 const post = addPostCommand(b, m.name, idx, cmd);
                 post.dependOn(&install.step);
-                b.getInstallStep().dependOn(post);
+                if (selected) b.getInstallStep().dependOn(post);
             }
         }
     }

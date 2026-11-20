@@ -17,10 +17,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
 
 import dep_options  # noqa: E402
+import workspace  # noqa: E402
 import zon  # noqa: E402
 
 REQUIRED_MODULE_FIELDS = {
     "kind",
+    "subproject",
     "artifact_name",
     "root",
     "deps",
@@ -99,6 +101,11 @@ def validate_graph(data: dict, root: Path) -> list[str]:
         stdin = gen.get("stdin")
         if stdin and not (root / stdin).is_file():
             errors.append(f"generated {gen_name!r} stdin file does not exist: {stdin}")
+
+    if not isinstance(data.get("subprojects"), dict):
+        errors.append("build.subprojects is not exported; add `build: subprojects: _subprojects` to export.cue")
+    else:
+        errors.extend(workspace.subproject_errors(data, root))
 
     packages = data.get("packages")
     if not isinstance(packages, dict):
@@ -258,7 +265,9 @@ def cmd_check(root: Path) -> int:
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
         return 1
-    print(f"azazel: configuration valid ({len(data['modules'])} modules)")
+    subprojects = len(data.get("subprojects") or {})
+    suffix = f", {subprojects} subprojects" if subprojects else ""
+    print(f"azazel: configuration valid ({len(data['modules'])} modules{suffix})")
     return 0
 
 
@@ -267,13 +276,104 @@ def cmd_gen(root: Path) -> int:
     return result.returncode
 
 
+def split_selection(args: list[str]) -> tuple[tuple[str, ...], tuple[str, ...], list[str]]:
+    """Take `--slice GLOB` and `--subproject NAME` out of an argument list.
+
+    Everything after a bare `--` belongs to `zig build` and is left alone.
+    """
+    slices: list[str] = []
+    subprojects: list[str] = []
+    rest: list[str] = []
+    flags = {"--slice": slices, "--subproject": subprojects}
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--":
+            rest.extend(args[index + 1:])
+            break
+        name, _, value = arg.partition("=")
+        if name in flags:
+            if not _:
+                index += 1
+                if index >= len(args):
+                    raise ValueError(f"{name} needs a value")
+                value = args[index]
+            if not value:
+                raise ValueError(f"{name} needs a value")
+            flags[name].append(value)
+        else:
+            rest.append(arg)
+        index += 1
+    return tuple(slices), tuple(subprojects), rest
+
+
+def selection_report(data: dict, slices: tuple[str, ...], subprojects: tuple[str, ...]) -> list[workspace.Target]:
+    return workspace.select(workspace.module_targets(data), slices, subprojects)
+
+
+def cmd_targets(root: Path, args: list[str]) -> int:
+    """List the modules a build can select, with their target paths.
+
+    azazel targets [--slice GLOB]... [--subproject NAME]... [--json]
+    """
+    as_json = "--json" in args
+    slices, subprojects, rest = split_selection([arg for arg in args if arg != "--json"])
+    if rest:
+        print(f"error: unexpected argument: {rest[0]}", file=sys.stderr)
+        return 2
+    data = cue_export(root)
+    problems = workspace.selection_errors(data, slices, subprojects)
+    if problems:
+        for problem in problems:
+            print(f"error: {problem}", file=sys.stderr)
+        return 1
+    chosen = selection_report(data, slices, subprojects)
+    declared = data.get("subprojects") or {}
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "slices": list(slices),
+                    "subprojects": list(subprojects),
+                    "selected": [target.manifest() for target in chosen],
+                    "declared_subprojects": declared,
+                    "nesting": workspace.nesting(declared),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    for target in chosen:
+        owner = f"  subproject {target.subproject}" if target.subproject else ""
+        where = f"  -> {target.install_dir}" if target.install_dir else ""
+        print(f"{target.target_path}  [{target.kind}]{owner}{where}")
+    print(f"azazel: {len(chosen)} of {len(data['modules'])} modules selected")
+    return 0
+
+
 def cmd_build(root: Path, extra: list[str]) -> int:
+    slices, subprojects, zig_args = split_selection(extra)
     if cmd_check(root) != 0:
         return 1
+    selecting = bool(slices or subprojects)
+    if selecting:
+        data = cue_export(root)
+        problems = workspace.selection_errors(data, slices, subprojects)
+        if problems:
+            for problem in problems:
+                print(f"error: {problem}", file=sys.stderr)
+            return 1
+        chosen = selection_report(data, slices, subprojects)
+        print(f"azazel: building {len(chosen)} of {len(data['modules'])} modules: " + ", ".join(t.target_path for t in chosen))
     if cmd_gen(root) != 0:
         return 1
     require_tool("zig")
-    result = run(["zig", "build", *extra], cwd=root, capture=False)
+    flags = [f"-Dslice={value}" for value in slices] + [f"-Dsubproject={value}" for value in subprojects]
+    result = run(["zig", "build", *flags, *zig_args], cwd=root, capture=False)
+    if result.returncode != 0 and selecting:
+        where = ", ".join(sorted({t.subproject_path or "(repo root)" for t in chosen}))
+        print(f"azazel: the build failed for the selected targets under: {where}", file=sys.stderr)
     return result.returncode
 
 
@@ -317,7 +417,8 @@ def usage() -> None:
         "  azazel gen\n"
         "  azazel doctor\n"
         "  azazel zon [check | write | import <build.zig.zon>]\n"
-        "  azazel build [zig build args...]\n"
+        "  azazel targets [--slice GLOB]... [--subproject NAME]... [--json]\n"
+        "  azazel build [--slice GLOB]... [--subproject NAME]... [zig build args...]\n"
         "  azazel clean\n"
         "  azazel info"
     )
@@ -344,6 +445,8 @@ def main() -> int:
             return cmd_doctor(root)
         if command == "zon":
             return cmd_zon(root, rest)
+        if command == "targets":
+            return cmd_targets(root, rest)
         if command == "build":
             return cmd_build(root, rest)
         if command == "clean":

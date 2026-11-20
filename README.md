@@ -58,6 +58,8 @@ python3 azazel check              # validate CUE, exported contract, roots, grap
 python3 azazel gen                # generate build_spec.zig
 python3 azazel build              # check + generate + zig build
 python3 azazel build -Dfoo=true   # forward normal Zig build arguments
+python3 azazel targets            # list target paths; select with --slice or --subproject
+python3 azazel build --slice 'examples/*'   # build only the matching subprojects
 python3 azazel info               # print the resolved build model
 python3 azazel clean
 ```
@@ -88,6 +90,7 @@ The generated `build_spec.zig` is typed Zig source. The executor does not parse 
 |---|---|
 | `kind` | `exe`, `static`, `shared`, or module-only target |
 | `root` | Zig root source file |
+| `subproject` | The nested package the module belongs to, by its key in `subprojects` |
 | `artifact_name` | Produced artifact name when it differs from the graph/import name |
 | `deps` | Internal module dependencies |
 | `profile` | Debug or release optimization profile |
@@ -137,6 +140,10 @@ The producer is a Zig host `tool`, a `command` on `PATH`, or a path exported by 
 `packages` in `project.cue` declares `build.zig.zon` dependencies by alias, with `url`, `hash`, `path` and `lazy`. Modules consume them through `pkg_imports`, `pkg_artifacts` and `pkg_library_paths`. `python3 azazel zon write` rewrites the `.dependencies` of `build.zig.zon` from that declaration, `azazel zon check` lists drift, and `azazel zon import <build.zig.zon>` prints a `packages` block for an existing manifest. See "Packages and build.zig.zon" in [`docs/WIKI.md`](docs/WIKI.md).
 
 The options a dependency takes are typed `args` on the import, the artifact or the generated package: `bool`, `int`, `string`, `string_list`, `enum`, `target` and `optimize`. `{name: "backend", kind: "enum", value: "glfw_wgpu"}` becomes `.backend = .glfw_wgpu` in the generated `b.dependency` call. `azazel check` compares each option with what the dependency's own `build.zig` declares, so a misspelled name or a wrong type fails before Zig runs. See "Dependency options" in [`docs/WIKI.md`](docs/WIKI.md).
+
+## Subprojects and target slices
+
+`subprojects` in `project.cue` declares nested packages by path, with an optional `output_dir` for their artifacts. A module joins one with `subproject`. `python3 azazel build --slice 'examples/*'` builds and installs only the modules whose target path or subproject path matches the glob. `--subproject NAME` selects by name, and `python3 azazel targets` lists what a selection reaches. This repository declares its danzig core and its two examples that way. See "Subprojects and target slices" in [`docs/WIKI.md`](docs/WIKI.md).
 
 ## System dependencies
 
