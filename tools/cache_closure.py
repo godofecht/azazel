@@ -20,6 +20,7 @@ The inputs, by part of the key:
     headers     every C or C++ source and the headers it includes, and every
                 file under a declared include directory
     objects     every declared object file and library search directory
+    installs    every file under a declared `install_dirs` source directory
     generated   generator tool sources, input files and stdin
     packages    the contents of each local `path` package, and the url and hash
                 of each fetched one
@@ -391,12 +392,24 @@ def zig_identity(zig: str | None, refusals: list[str]) -> dict[str, str]:
     return {"version": version, "binary_sha256": _ZIG_DIGESTS[memo]}
 
 
+_NATIVE: dict[str, str] = {}
+
+
 def native_target(zig: str | None) -> str:
     """The host's native target, cpu model and features, as Zig reports them."""
     path = zig or shutil.which("zig")
     if not path:
         return "unknown"
-    result = subprocess.run([path, "targets"], text=True, capture_output=True, check=False)
+    if path not in _NATIVE:
+        _NATIVE[path] = _read_native_target(path)
+    return _NATIVE[path]
+
+
+def _read_native_target(path: str) -> str:
+    try:
+        result = subprocess.run([path, "targets"], text=True, capture_output=True, check=False)
+    except OSError:
+        return "unknown"
     text = result.stdout
     start = text.find(".native = .{")
     if result.returncode == 0 and start >= 0:
@@ -408,7 +421,10 @@ def native_target(zig: str | None) -> str:
                 depth -= 1
                 if depth == 0:
                     return re.sub(r"\s+", " ", text[start:index + 1])
-    env = subprocess.run([path, "env"], text=True, capture_output=True, check=False)
+    try:
+        env = subprocess.run([path, "env"], text=True, capture_output=True, check=False)
+    except OSError:
+        return "unknown"
     match = re.search(r'"target":\s*"([^"]+)"', env.stdout)
     return match.group(1) if match else "unknown"
 
@@ -496,6 +512,8 @@ def collect(project: Path, model: dict, args: list[str], env: dict[str, str], wa
                     "with inputs the key cannot see"
                 )
         roots.append(project / module["root"])
+        for install in module.get("install_dirs", []):
+            walk.add_tree("installs", project / install["source_dir"], f"module {name!r} install directory")
         native = module.get("native") or {}
         include_dirs = [project / d for d in native.get("include_dirs", [])]
         for directory in native.get("include_dirs", []):
@@ -632,6 +650,7 @@ def compute(
         "sources": digest_json(walk.files.get("sources", {})),
         "headers": digest_json(walk.files.get("headers", {})),
         "objects": digest_json(walk.files.get("objects", {})),
+        "installs": digest_json(walk.files.get("installs", {})),
         "generated": digest_json(walk.files.get("generated", {})),
         "packages": digest_json({"ids": extra["packages"], "trees": walk.files.get("packages", {})}),
         "system": digest_json(extra["system"]),

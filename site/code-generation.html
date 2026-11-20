@@ -38,133 +38,14 @@
 
 <h2 id="from-build_speczig-to-buildzig">From build_spec.zig to build.zig</h2>
 
-<p><code>gen_build_spec.sh</code> writes a fixed header and then one struct literal per
-module:</p>
+<p><code>build_spec.zig</code> contains typed constants for toolchain lanes, packages, options,
+and modules. <code>build.zig</code> imports it at comptime, rejects unsupported Zig lanes,
+creates <code>std.Build.Module</code> values, applies native/options/package/generated
+metadata, creates only the artifacts that need independent compilation, wires
+import or ABI edges, and attaches install/post-build steps.</p>
 
-<pre data-lang="zig"><code class="language-zig">const std = @import("std");
-
-pub const Kind = enum { exe, static, shared };
-
-pub const Module = struct {
-    name: []const u8,
-    kind: Kind,
-    root: []const u8,
-    deps: []const []const u8,
-    optimize: std.builtin.OptimizeMode,
-};
-
-pub const modules = [_]Module{
-    .{
-        .name = "core",
-        .kind = .static,
-        .root = "src/core.zig",
-        .deps = &amp;.{},
-        .optimize = .Debug,
-    },
-    .{
-        .name = "app",
-        .kind = .exe,
-        .root = "src/main.zig",
-        .deps = &amp;.{ "core" },
-        .optimize = .ReleaseFast,
-    },
-};</code></pre>
-
-<p>The field-by-field correspondence:</p>
-
-<div class="table-scroll">
-<table>
-<thead><tr><th>Spec field</th><th>Source</th><th>Used by <code>build.zig</code> as</th></tr></thead>
-<tbody>
-<tr><td><code>.name</code></td><td>the key in <code>_modules</code></td><td>artifact name, hash-map key</td></tr>
-<tr><td><code>.kind</code></td><td><code>kind</code></td><td>the <code>switch</code> that picks <code>addExecutable</code> or <code>addLibrary</code></td></tr>
-<tr><td><code>.root</code></td><td><code>root</code></td><td><code>b.path(m.root)</code> as <code>root_source_file</code></td></tr>
-<tr><td><code>.deps</code></td><td><code>deps</code></td><td>names looked up in the hash map, then <code>linkLibrary</code></td></tr>
-<tr><td><code>.optimize</code></td><td><code>profiles[profile].optimize</code></td><td><code>.optimize</code> on the created module</td></tr>
-</tbody>
-</table>
-</div>
-
-<p><code>build.zig</code> imports it at comptime and makes two passes:</p>
-
-<pre data-lang="zig"><code class="language-zig">const spec = @import("build_spec.zig");
-
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-
-    var built = std.StringHashMap(*std.Build.Step.Compile).init(b.allocator);
-    defer built.deinit();
-
-    // Pass 1: one Compile step per module.
-    for (spec.modules) |m| {
-        const mod = b.createModule(.{
-            .root_source_file = b.path(m.root),
-            .target = target,
-            .optimize = m.optimize,
-        });
-
-        const step = switch (m.kind) {
-            .exe =&gt; b.addExecutable(.{ .name = m.name, .root_module = mod }),
-            .static =&gt; b.addLibrary(.{ .name = m.name, .root_module = mod, .linkage = .static }),
-            .shared =&gt; b.addLibrary(.{ .name = m.name, .root_module = mod, .linkage = .dynamic }),
-        };
-
-        built.put(m.name, step) catch unreachable;
-    }
-
-    // Pass 2: resolve deps by name and install.
-    for (spec.modules) |m| {
-        const step = built.get(m.name).?;
-        for (m.deps) |dep| {
-            step.linkLibrary(built.get(dep).?);
-        }
-        b.installArtifact(step);
-    }
-}</code></pre>
-
-<p>The example <code>build.zig</code> files differ in two small ways. They spell the link
-call <code>step.root_module.linkLibrary(...)</code>, which works on 0.14 and 0.15 and
-survives Zig 0.16 moving <code>linkLibrary</code> off <code>Compile</code>. And they give every
-executable an rpath so an installed binary can find an installed shared
-library:</p>
-
-<pre data-lang="zig"><code class="language-zig">if (m.kind == .exe) {
-    step.root_module.addRPathSpecial(switch (target.result.os.tag) {
-        .macos, .ios, .tvos, .watchos =&gt; "@loader_path/../lib",
-        else =&gt; "$ORIGIN/../lib",
-    });
-}</code></pre>
-
-<p>Without it the only rpath Zig writes points into <code>.zig-cache</code>, relative to
-the current directory, and <code>zig-out/bin/gateway</code> runs from the project
-directory and nowhere else:</p>
-
-<pre><code>dyld[5991]: Library not loaded: @rpath/libcodec.dylib
-  Reason: tried: '.zig-cache/o/59c0702a5054dc7de34617670bdb6c38/libcodec.dylib' (no such file)</code></pre>
-
-<p>The repo root's <code>build.zig</code> omits it because nothing there is an executable
-that links a shared library. Add it if you write one.</p>
-
-<p>Two passes, because pass 1 has to have created every step before pass 2 can
-look any of them up. That is what makes declaration order irrelevant.</p>
-
-<p>Three consequences worth knowing.</p>
-
-<p><strong>Everything is installed.</strong> Libraries as well as executables. Anything in
-<code>_modules</code> ends up in <code>zig-out</code>.</p>
-
-<p><strong>One target for the whole graph.</strong> <code>standardTargetOptions</code> is read once and
-applied to every module, so <code>zig build -Dtarget=x86_64-linux</code> cross-compiles
-all of it at once. There is no per-module target field.</p>
-
-<p><strong><code>built.get(dep).?</code> is unchecked.</strong> An unknown name is a panic during
-configuration, before any step runs.</p>
-
-<p>The repo's <code>build.zig</code> adds one thing beyond the above: a <code>test</code> step over
-three suites, <code>build_spec_test.zig</code>, <code>src/core_test.zig</code> and
-<code>src/danzig/tests.zig</code>. <code>build_spec_test.zig</code> asserts the invariants the
-loop depends on: unique names, <code>.zig</code> roots, roots present on disk, every
-<code>dep</code> resolvable, no self-dependency, no cycles.</p>
+<p>This executor is where Zig-version API adaptation belongs. Keeping that logic
+centralized is the main compatibility value Azazel offers consuming projects.</p>
 
 <div class="page-footer">
   <a href="schema-reference.html">&larr; Schema Reference</a>

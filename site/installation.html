@@ -38,94 +38,26 @@
 
 <h2 id="prerequisites">Prerequisites</h2>
 
-<div class="table-scroll">
-<table>
-<thead><tr><th>Tool</th><th>Version</th><th>Why</th></tr></thead>
-<tbody>
-<tr><td>Zig</td><td>0.14.x, 0.15.x or 0.16.x</td><td>supported <code>std.Build</code> lanes</td></tr>
-<tr><td>CUE</td><td>v0.16.0</td><td>validates and exports the config</td></tr>
-<tr><td>Python 3</td><td>any 3.x</td><td><code>gen_build_spec.sh</code> uses it to emit Zig from CUE's JSON</td></tr>
-</tbody>
-</table>
-</div>
+<p>The production CI matrix covers Zig 0.14.1, 0.15.2, and 0.16.0 with CUE v0.16.0
+and Python 3. Zig 0.17 can be described for development/corpus work but is not a
+stable release lane while that toolchain is moving.</p>
 
-<p>Azazel is maintained by Zig minor-version lane because <code>std.Build</code> changes
-between releases. Project configs can narrow the supported lanes with
-<code>toolchain.zig.lanes</code>; the generated <code>build_spec.zig</code> records that contract and
-<code>build.zig</code> rejects an unsupported host lane before compiling modules.</p>
+<p>The hosted macOS smoke test uses Zig 0.16.0. Zig 0.15.2 is covered on Linux; the
+current GitHub macOS 26 arm64 image cannot link that Zig version's build runner,
+so that host/toolchain combination is not advertised as supported.</p>
 
-<p>macOS:</p>
-
-<pre data-lang="sh"><code class="language-sh">brew install zig cue</code></pre>
-
-<p>Linux: get Zig from &lt;https://ziglang.org/download/&gt; and CUE from
-&lt;https://cuelang.org/docs/introduction/installation/&gt;, or
-<code>go install cuelang.org/go/cmd/cue@latest</code>.</p>
-
-<p>Python 3 ships with macOS and every mainstream Linux distribution.</p>
+<p>For this repository:</p>
 
 <pre data-lang="sh"><code class="language-sh">git clone https://github.com/godofecht/azazel.git
 cd azazel
-./setup.sh</code></pre>
+./setup.sh --check-only
+python3 azazel check
+python3 azazel build</code></pre>
 
-<p><code>setup.sh</code> checks the toolchain, generates <code>build_spec.zig</code>, builds, and runs
-the tests. It uses Zig-version-specific cache directories by default, so
-switching between the 0.14/0.15/0.16 lanes does not reuse a stale build runner.
-It is safe to run repeatedly and exits non-zero on the first failure.</p>
-
-<pre><code>$ ./setup.sh
-
-== Checking prerequisites
-  zig      0.15.2   (/opt/homebrew/bin/zig)
-  cue      v0.16.0   (/opt/homebrew/bin/cue)
-  python3  3.9.6   (/usr/bin/python3)
-
-== Generating build_spec.zig
-Generated build_spec.zig
-
-== Building
-
-== Testing
-
-Build Summary: 7/7 steps succeeded; 56/56 tests passed
-test success
-+- run test 12 passed 1ms MaxRSS:1M
-|  +- compile test Debug native cached 40ms MaxRSS:34M
-+- run test 9 passed 1ms MaxRSS:2M
-|  +- compile test Debug native cached 40ms MaxRSS:34M
-+- run test 35 passed 1ms MaxRSS:1M
-   +- compile test Debug native cached 40ms MaxRSS:34M
-
-
-Done.
-
-  ./zig-out/bin/app          run the sample executable
-  $EDITOR project.cue        declare your modules
-  ./gen_build_spec.sh        regenerate after every project.cue change
-  docs/WIKI.md               full reference</code></pre>
-
-<p>Other invocations:</p>
-
-<pre data-lang="sh"><code class="language-sh">./setup.sh --check-only              report tool versions and stop
-./setup.sh --examples                also build and test everything in examples/
-ZIG=/path/to/zig ./setup.sh          use a specific Zig binary
-CUE=/path/to/cue ./setup.sh          use a specific CUE binary
-ZIG_CACHE_DIR=/tmp/azazel-cache ./setup.sh
-./setup.sh --help</code></pre>
-
-<p>If a tool is missing, it says so and points at an installer:</p>
-
-<pre><code>$ ZIG=/nonexistent/zig ./setup.sh --check-only
-
-== Checking prerequisites
-  zig      MISSING
-           macOS:  brew install zig
-           Linux:  https://ziglang.org/download/  (or your package manager)
-           Any:    https://github.com/marler8997/zigup
-           Already installed elsewhere? Run: ZIG=/path/to/zig ./setup.sh
-  cue      v0.16.0   (/opt/homebrew/bin/cue)
-  python3  3.9.6   (/usr/bin/python3)
-error: install the tools above, then run ./setup.sh again</code></pre>
+<p>Azazel is pre-1.0. Production consumers should pin the exact revision or release
+they test in CI and upgrade deliberately. Moving from the current vendored
+integration shape to a centrally versioned consumer dependency is tracked as
+production-adoption work.</p>
 
 <div class="page-footer">
   <a href="pipeline.html">&larr; The Pipeline</a>

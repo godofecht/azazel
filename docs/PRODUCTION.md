@@ -49,21 +49,26 @@ and removals of supported Zig lanes are treated as breaking changes and must be
 called out in release notes.
 
 Within a release line, a project model that validates should not silently change
-meaning. Unsupported combinations should fail during validation or generation,
-not degrade into a different build topology.
+meaning. Unsupported combinations should fail during validation or generation
+and should never degrade into a different build topology.
 
 ## Experimental surfaces
 
 The following are intentionally outside the production contract:
 
-- shared artifact caching in `cache_build.sh`;
 - corpus/fork automation under `tools/huge_corpus.py`;
 - Danzig, which is retained as an integration/dogfood workload;
 - editor tooling under `ide/` unless separately versioned and released.
 
 Experimental code may be valuable and heavily tested, but it must not be
-required for a normal Azazel build. The shared cache is explicitly disabled by
-default because its key does not yet prove a complete build-input closure.
+required for a normal Azazel build.
+
+## Shared cache
+
+`cache_build.sh` is part of the supported surface for builds the key can name.
+The key covers the declared-input closure described in `CACHE.md`, and a build
+with an input outside that closure is refused. A refused build runs through
+Zig's normal build path instead.
 
 ## Release gate
 
@@ -84,5 +89,6 @@ For a production project, pin the Azazel revision or release used by CI and keep
 Upgrade Azazel deliberately and run the project's complete build/test/package
 matrix before changing the pin.
 
-Do not use the experimental shared cache for release artifacts. Use Zig's normal
-build/cache path until the cache input-closure work is complete.
+Use the shared cache for release artifacts only when `cache_key.sh` accepts the
+build. Read the limits in `CACHE.md` first, including the debug-path note for
+Debug builds.

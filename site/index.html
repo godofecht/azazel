@@ -36,44 +36,25 @@
 
 <div class="hero">
   <h1 id="azazel">Azazel</h1>
-  <p class="hero-sub">A build configuration layer for Zig. You describe your modules in CUE. CUE
-type-checks them and fills in defaults. A shell script turns the result into a
-Zig source file. <code>build.zig</code> walks that file and produces the compile graph.</p>
+  <p class="hero-sub">Azazel is a deterministic build-model layer for Zig. CUE validates project
+intent, Azazel emits typed Zig build data, and <code>std.Build</code> remains the executor.
+The production support contract lives in <a href="https://github.com/godofecht/azazel/blob/main/docs/PRODUCTION.md"><code>PRODUCTION.md</code></a>.</p>
 </div>
-
-<p>Source: &lt;https://github.com/godofecht/azazel&gt;</p>
 
 <h2 id="the-problem">The problem</h2>
 
-<p>A <code>build.zig</code> starts as twenty lines and ends as four hundred. Module wiring,
-optimization modes, link edges and install rules all live in imperative code,
-mixed with real logic. Adding a library means editing that code. Answering
-"what does this project build, and how" means reading it.</p>
+<p>Zig makes its build system programmable, which is powerful but can mix project
+configuration with version-specific <code>std.Build</code> compatibility code. Azazel
+separates those responsibilities.</p>
 
-<p>Azazel splits the description from the execution.</p>
+<p><code>project.cue</code> says what the project contains. <code>schema.cue</code> constrains that model.
+<code>export.cue</code> resolves the public build graph. <code>gen_build_spec.sh</code> emits typed Zig
+source. <code>build.zig</code> translates the result onto the supported Zig build APIs.</p>
 
-<p><code>project.cue</code> holds the description. It is data, so a schema can validate it.
-A typo in a <code>kind</code>, a wrong type on a field, an unrecognised option: these are
-rejected by <code>cue</code> before any Zig runs, with a message pointing at the line.</p>
-
-<p><code>build.zig</code> holds the execution. It is a fixed loop, about forty lines, and it
-does not change when your project does.</p>
-
-<p>The generated file in between is Zig source, so there is no parser and no JSON
-at build time. The module list is a compile-time constant.</p>
-
-<p>The surface is deliberately small. Modules describe their artifact shape,
-source root, dependency edges, link mode, profile, and optional post-build
-commands. There are still no arbitrary compiler flags, include paths, platform
-triples, or linker options. <code>#Module</code> is a closed CUE definition, so there is no
-escape hatch either:</p>
-
-<pre><code>$ cue export -e build
-app.flags: field not allowed:
-    ./project.cue:8:2</code></pre>
-
-<p>If you need something outside those four fields, <code>build.zig</code> is still an
-ordinary <code>build.zig</code> and you can add it there.</p>
+<p>The result is a stable, machine-readable project model that can be validated,
+inspected, diffed, consumed by tooling, and replayed across supported Zig lanes.
+Azazel does not replace Zig as the build executor; it is a configuration/IR and
+compatibility layer over it.</p>
 
 <div class="page-footer">
   <span><a href="https://github.com/godofecht/azazel">azazel on GitHub</a></span>

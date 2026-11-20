@@ -617,12 +617,12 @@ until the project has actually been tested there.
 Do not silently discard it. Model it explicitly with a real-project test, or use
 the generic typed dependency-option work once it lands.
 
-### Shared cache is disabled
+### Shared cache says the build is not cacheable
 
-That is intentional. `cache_build.sh` requires
-`AZAZEL_EXPERIMENTAL_CACHE=1` because the key does not yet prove a complete
-artifact-input closure. It is not suitable for production release artifacts.
-See [`../CACHE.md`](../CACHE.md).
+`cache_build.sh` exits with status 3 and lists a reason for each input the key
+cannot name, such as a `post` command, a system library or an unmodeled build
+argument. Run `python3 azazel cache-key --explain` to see the same list. Remove
+the cause or build without the cache. See [`../CACHE.md`](../CACHE.md).
 
 ## File reference
 
@@ -639,7 +639,8 @@ See [`../CACHE.md`](../CACHE.md).
 | `compat.zig` | supported Zig-version helpers | core |
 | `docs/PRODUCTION.md` | support/release contract | policy |
 | `tools/huge_corpus.py` | real-project validation | experimental |
-| `cache_key.sh`, `cache_build.sh` | shared-cache prototype | experimental |
+| `cache_key.sh`, `cache_build.sh`, `tools/cache_closure.py` | shared cache and its declared-input key | core |
+| `tools/cache_parity.py` | cache-hit against clean-build comparison | validation |
 | `ide/` | editor/LSP tooling | experimental |
 | `src/danzig/` | VST3 dogfood workload | not Azazel API |
 

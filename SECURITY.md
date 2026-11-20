@@ -11,9 +11,9 @@ stating that you have a security report and need a private contact channel; do
 not include the exploit or sensitive details in that issue.
 
 The production-supported surface is defined in `docs/PRODUCTION.md`. Experimental
-features, including the shared artifact cache, are not suitable for release or
-security-sensitive artifacts until explicitly promoted into that support
-contract.
+features are not suitable for release or security-sensitive artifacts until
+explicitly promoted into that support contract. A shared cache store accepts any
+entry its writers upload, so give it the access control of the artifacts it serves.
 
 Security fixes should include a regression test where practical and should not
 be disclosed as fixed until affected revisions and the remediation are clear.

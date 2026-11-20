@@ -38,28 +38,38 @@
 
 <div class="table-scroll">
 <table>
-<thead><tr><th>File</th><th>Role</th><th>How often you edit it</th></tr></thead>
+<thead><tr><th>Path</th><th>Role</th><th>Status</th></tr></thead>
 <tbody>
-<tr><td><code>project.cue</code></td><td>module declarations</td><td>every time the project changes</td></tr>
-<tr><td><code>export.cue</code></td><td>which modules get built</td><td>whenever you add or remove one</td></tr>
-<tr><td><code>schema.cue</code></td><td>types and defaults</td><td>rarely; new kinds or profiles</td></tr>
-<tr><td><code>gen_build_spec.sh</code></td><td><code>cue export</code> to Zig source</td><td>never</td></tr>
-<tr><td><code>build_spec.zig</code></td><td>generated module array</td><td>never; gitignored</td></tr>
-<tr><td><code>build.zig</code></td><td>walks the spec, builds the graph</td><td>never, in normal use</td></tr>
-<tr><td><code>setup.sh</code></td><td>toolchain check, generate, build, test</td><td>never</td></tr>
-<tr><td><code>build_spec_test.zig</code></td><td>invariants over the generated spec</td><td>when adding invariants</td></tr>
+<tr><td><code>project.cue</code></td><td>project declarations</td><td>core</td></tr>
+<tr><td><code>schema.cue</code></td><td>types/defaults/constraints</td><td>core</td></tr>
+<tr><td><code>export.cue</code></td><td>resolved model projection</td><td>core</td></tr>
+<tr><td><code>gen_build_spec.sh</code></td><td>canonical CUE-to-Zig generator</td><td>core</td></tr>
+<tr><td><code>build_spec.zig</code></td><td>generated typed build IR</td><td>generated</td></tr>
+<tr><td><code>build.zig</code></td><td>Zig executor/compatibility layer</td><td>core</td></tr>
+<tr><td><code>azazel</code></td><td>CLI/orchestrator/preflight</td><td>core</td></tr>
+<tr><td><code>build_spec_test.zig</code></td><td>spec invariants</td><td>core tests</td></tr>
+<tr><td><code>compat.zig</code></td><td>supported Zig-version helpers</td><td>core</td></tr>
+<tr><td><code>docs/PRODUCTION.md</code></td><td>support/release contract</td><td>policy</td></tr>
+<tr><td><code>tools/huge_corpus.py</code></td><td>real-project validation</td><td>experimental</td></tr>
+<tr><td><code>cache_key.sh</code>, <code>cache_build.sh</code>, <code>tools/cache_closure.py</code></td><td>shared cache and its declared-input key</td><td>core</td></tr>
+<tr><td><code>tools/cache_parity.py</code></td><td>cache-hit against clean-build comparison</td><td>validation</td></tr>
+<tr><td><code>ide/</code></td><td>editor/LSP tooling</td><td>experimental</td></tr>
+<tr><td><code>src/danzig/</code></td><td>VST3 dogfood workload</td><td>not Azazel API</td></tr>
 </tbody>
 </table>
 </div>
 
 <h2 id="links">Links</h2>
 
-<ul>
-<li>Repository: &lt;https://github.com/godofecht/azazel&gt;</li>
-<li>Examples: <a href="https://github.com/godofecht/azazel/tree/main/examples"><code>examples/</code></a></li>
-<li>CUE: &lt;https://cuelang.org/&gt;</li>
-<li>Zig build system: &lt;https://ziglang.org/learn/build-system/&gt;</li>
-</ul>
+<p>Repository: &lt;https://github.com/godofecht/azazel&gt;</p>
+
+<p>Production contract: <a href="https://github.com/godofecht/azazel/blob/main/docs/PRODUCTION.md"><code>PRODUCTION.md</code></a>. Contributor contract:
+<a href="https://github.com/godofecht/azazel/blob/main/CONTRIBUTING.md"><code>../CONTRIBUTING.md</code></a>. Security policy:
+<a href="https://github.com/godofecht/azazel/blob/main/SECURITY.md"><code>../SECURITY.md</code></a>. Experimental cache:
+<a href="https://github.com/godofecht/azazel/blob/main/CACHE.md"><code>../CACHE.md</code></a>.</p>
+
+<p>Azazel is also the declarative configuration frontend for
+<a href="https://github.com/godofecht/zaza">Zaza</a>.</p>
 
 <div class="page-footer">
   <a href="troubleshooting.html">&larr; Troubleshooting</a>

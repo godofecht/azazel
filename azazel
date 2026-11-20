@@ -392,6 +392,18 @@ def cmd_doctor(root: Path) -> int:
     return 0
 
 
+def cmd_cache_key(root: Path, args: list[str]) -> int:
+    """Print the shared-cache key for a build, or the reasons it is not cacheable.
+
+    azazel cache-key [--explain] [zig build args...]
+    """
+    import cache_closure
+
+    explain = bool(args) and args[0] == "--explain"
+    argv = ["explain" if explain else "key", "--project", str(root), "--", *(args[1:] if explain else args)]
+    return cache_closure.main(argv)
+
+
 def cmd_clean(root: Path) -> int:
     for name in ("build_spec.zig", ".build_spec.stamp"):
         path = root / name
@@ -419,6 +431,7 @@ def usage() -> None:
         "  azazel zon [check | write | import <build.zig.zon>]\n"
         "  azazel targets [--slice GLOB]... [--subproject NAME]... [--json]\n"
         "  azazel build [--slice GLOB]... [--subproject NAME]... [zig build args...]\n"
+        "  azazel cache-key [--explain] [zig build args...]\n"
         "  azazel clean\n"
         "  azazel info"
     )
@@ -449,6 +462,8 @@ def main() -> int:
             return cmd_targets(root, rest)
         if command == "build":
             return cmd_build(root, rest)
+        if command == "cache-key":
+            return cmd_cache_key(root, rest)
         if command == "clean":
             return cmd_clean(root)
         if command == "info":
